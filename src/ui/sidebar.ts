@@ -4,9 +4,10 @@ import {
   ALL_SPOT_BY_ID,
   ISLANDS,
   ISLAND_FRUIT_BY_ID,
+  MAIN_ISLAND_IDS,
   MONTHS,
-  POLICY_ID,
   islandName,
+  isMainIsland,
 } from '../data/atlas';
 import { RESIDENTS, RESIDENTS_BY_ISLAND } from '../data/residents';
 import type { Island } from '../data/spots';
@@ -102,9 +103,9 @@ function render(s: AppState, host: HTMLElement): void {
   else renderSeason(host, q, visited);
 }
 
-/** 居民頁籤：政策島的北農員工在前，其後是各水果島的品種化身 */
+/** 居民頁籤：兩座主島的北農員工在前，其後是各水果島的品種化身 */
 function renderResidents(host: HTMLElement, q: string, s: AppState, met: Set<string>): void {
-  const order = [POLICY_ID, ...ISLANDS.map((i) => i.fruit.id)];
+  const order = [...MAIN_ISLAND_IDS, ...ISLANDS.map((i) => i.fruit.id)];
   let found = 0;
 
   for (const islandId of order) {
@@ -117,7 +118,7 @@ function renderResidents(host: HTMLElement, q: string, s: AppState, met: Set<str
     const done = people.filter((r) => met.has(r.id)).length;
     const head = el('div', 'res-head');
     head.append(
-      el('b', undefined, islandId === POLICY_ID ? '政策島・北農員工' : `${islandName(islandId)}島`),
+      el('b', undefined, isMainIsland(islandId) ? `${islandName(islandId)}・北農員工` : `${islandName(islandId)}島`),
       el('span', undefined, `${done}/${people.length}`),
     );
     host.append(head);
@@ -147,7 +148,7 @@ function residentHaystack(r: Resident): string {
   return [r.name, r.short, r.role, r.lead, ...r.points, ...r.keywords].join(' ').toLowerCase();
 }
 
-/** 水果島清單（含政策島在最前） */
+/** 島嶼清單（兩座主島在最前） */
 function renderIslands(host: HTMLElement, q: string, s: AppState, visited: Set<string>): void {
   let found = 0;
   for (const island of ALL_ISLANDS) {

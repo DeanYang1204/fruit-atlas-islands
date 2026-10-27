@@ -1,9 +1,9 @@
 import * as THREE from 'three';
+import { isMarket } from '../data/markets';
 import type { Island } from '../data/spots';
 import { RESIDENTS_BY_ISLAND } from '../data/residents';
 import { createTree, spiralPosition } from './tree';
 import { islandLabel, type Label } from './labels';
-import { createNpc, updateNpc, setNpcLabelVisible, type NpcView } from './npc';
 import { bake, part } from './bake';
 import type { TreeView } from './tree';
 
@@ -116,13 +116,8 @@ export interface IslandView {
   grassMat: THREE.MeshStandardMaterial;
   trees: Map<string, TreeView>;
   label: Label;
-  /** 散步的居民（水果人／北農員工） */
-  npcs: Map<string, NpcView>;
-  npcRoot: THREE.Group;
-  /** 是否為政策島（沒有水果居民，只有北農員工） */
-  policy: boolean;
-  /** 距離鏡頭夠近時才讓居民活動 */
-  npcActive: boolean;
+  /** 是否為主島（第一／第二果菜市場） */
+  main: boolean;
   /** 目前是否當令（依月份篩選） */
   inSeason: boolean;
   /** 目標亮度倍率 */
@@ -323,20 +318,8 @@ export function createIsland(island: Island): IslandView {
     trees.set(spot.id, tree);
   });
 
-  // 居民：水果島是品種化身，政策島是北農員工
-  const npcRoot = new THREE.Group();
-  const npcs = new Map<string, NpcView>();
-  const people = RESIDENTS_BY_ISLAND[fruit.id] ?? [];
-  people.forEach((resident, i) => {
-    const npc = createNpc(resident, i, people.length);
-    // 腳要踩在草地上（草地頂面比島頂高 0.11）
-    npc.root.position.y = TOP_Y + 0.11;
-    npcRoot.add(npc.root);
-    npcs.set(resident.id, npc);
-  });
-  group.add(npcRoot);
-
-  const label = islandLabel(fruit.name, spots.length, npcs.size);
+  const peopleCount = (RESIDENTS_BY_ISLAND[fruit.id] ?? []).length;
+  const label = islandLabel(fruit.name, spots.length, peopleCount);
   label.obj.position.set(0, TOP_Y + 2.9, 0);
   group.add(label.obj);
 
@@ -349,10 +332,7 @@ export function createIsland(island: Island): IslandView {
     grassMat,
     trees,
     label,
-    npcs,
-    npcRoot,
-    policy: fruit.id === 'policy',
-    npcActive: false,
+    main: isMarket(fruit.id),
     inSeason: true,
     glow: 0.05,
     currentGlow: 0.05,
@@ -367,12 +347,4 @@ export function updateIsland(view: IslandView, t: number, dt: number): void {
   view.glow = view.inSeason ? 0.16 + Math.sin(t * 1.2) * 0.05 : 0.015;
   view.currentGlow += (view.glow - view.currentGlow) * Math.min(1, dt * 4);
   view.grassMat.emissiveIntensity = view.currentGlow;
-
-  if (!view.npcRoot.visible && view.npcs.size === 0) return;
-  for (const npc of view.npcs.values()) updateNpc(npc, t, dt, view.npcActive);
-}
-
-/** 選島時才展開居民名牌，避免整片畫面被文字淹沒 */
-export function updateIslandNpcLabels(view: IslandView, show: boolean): void {
-  for (const npc of view.npcs.values()) setNpcLabelVisible(npc, show);
 }

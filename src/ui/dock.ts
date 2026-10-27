@@ -1,4 +1,4 @@
-import { ALL_ISLANDS, islandName } from '../data/atlas';
+import { ALL_ISLANDS, islandLabelName, isMainIsland } from '../data/atlas';
 import { RESIDENTS_BY_ISLAND } from '../data/residents';
 import { store } from '../state';
 import { clear, el, must } from './dom';
@@ -9,15 +9,16 @@ export function initDock(): void {
 
   for (const island of ALL_ISLANDS) {
     const fruit = island.fruit;
-    const isPolicy = fruit.id === 'policy';
-    const btn = el('button', 'dock-item' + (isPolicy ? ' is-policy' : ''));
+    const isMain = isMainIsland(fruit.id);
+    const btn = el('button', 'dock-item' + (isMain ? ' is-policy' : ''));
     btn.dataset.fruit = fruit.id;
     btn.title = `${fruit.name}｜${fruit.tagline}`;
     btn.style.setProperty('--c', fruit.color);
-    btn.append(el('span', 'dot'), el('span', 'dock-name', fruit.name));
+    // 主島顯示全名（第一／第二果菜市場），水果島維持短名
+    btn.append(el('span', 'dot'), el('span', 'dock-name', isMain ? fruit.name : fruit.name));
     btn.addEventListener('click', () => {
       store.set({ islandId: fruit.id, spotId: null, residentId: null, cardOpen: true });
-      store.pushLog({ islandId: fruit.id, spotId: null, text: `前往「${islandName(fruit.id)}」島` });
+      store.pushLog({ islandId: fruit.id, spotId: null, text: `前往「${islandLabelName(fruit.id)}」` });
     });
     dock.append(btn);
   }

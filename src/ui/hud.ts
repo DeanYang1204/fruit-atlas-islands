@@ -1,6 +1,6 @@
 import { FRUIT_BY_ID } from '../data/fruits';
 import { MONTHS } from '../data/spots';
-import type { TimeKey } from '../data/types';
+import type { TimeKey, WeatherKey } from '../data/types';
 import { formatClock, hourNote, PRESET_MINUTES } from '../scene/palette';
 import type { ToggleKey, World } from '../scene/world';
 import { store } from '../state';
@@ -34,6 +34,22 @@ export function initHud(world: World): void {
     }
     const legend = must<HTMLElement>('#legend');
     legend.hidden = !s.toggles.flows;
+  });
+
+  // ---- 天氣（晴／陰／雨） ----
+  const weatherButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.seg [data-weather]'));
+  for (const btn of weatherButtons) {
+    btn.addEventListener('click', () => {
+      store.set({ weather: btn.dataset.weather as WeatherKey });
+    });
+  }
+
+  store.on(['weather'], (s) => {
+    for (const btn of weatherButtons) {
+      const on = btn.dataset.weather === s.weather;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    }
   });
 
   // ---- 時段 ----

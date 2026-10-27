@@ -2,13 +2,16 @@ import './styles.css';
 import {
   ALL_ISLANDS,
   ALL_SPOT_BY_ID,
+  MAIN_ISLAND_IDS,
   MONTHS,
-  TOTAL_ISLANDS,
-  TOTAL_SPOTS,
+  TOTAL_ALL_ISLANDS,
+  TOTAL_ALL_SPOTS,
+  islandLabelName,
   islandName,
+  isMainIsland,
 } from './data/atlas';
 import { RESIDENT_BY_ID, TOTAL_RESIDENTS } from './data/residents';
-import type { TimeKey, ToggleKey } from './data/types';
+import type { TimeKey, ToggleKey, WeatherKey } from './data/types';
 import { formatClock, hourNote } from './scene/palette';
 import { World } from './scene/world';
 import { store, type AppState } from './state';
@@ -67,20 +70,30 @@ function updateMascot(hoverSpotId: string | null, hoverResidentId: string | null
 }
 
 function islandHint(id: string): string {
-  return id === 'policy'
-    ? '政策島｜這裡只有北農員工，沒有水果居民'
+  return isMainIsland(id)
+    ? `${islandName(id)}｜住的是北農的員工，吳總也從這裡出發巡島`
     : `${islandName(id)}島｜點果樹學知識，點路上的居民聊聊天`;
 }
 
 function updateStatus(s: AppState): void {
   const bits: string[] = [];
-  if (s.islandId) bits.push(`目前：${islandName(s.islandId)}`);
+  if (s.islandId) bits.push(`目前：${islandLabelName(s.islandId)}`);
   if (s.month) bits.push(`${MONTHS[s.month - 1]}當令`);
   if (s.families.length > 0) bits.push(`科別篩選 ${s.families.length}`);
-  bits.push(`已學 ${s.visited.length} / ${TOTAL_SPOTS}`);
+  const weatherLabel = WEATHER_LABEL[s.weather];
+  if (s.weather !== 'clear') bits.push(`天氣：${weatherLabel}`);
+  bits.push(`已學 ${s.visited.length} / ${TOTAL_ALL_SPOTS}`);
   bits.push(`居民 ${s.met.length} / ${TOTAL_RESIDENTS}`);
+  // 吳總巡視到哪一島
+  if (s.bossIslandId) bits.push(`吳總在：${islandLabelName(s.bossIslandId)}`);
   statusEl.textContent = bits.join('　・　');
 }
+
+const WEATHER_LABEL: Record<WeatherKey, string> = {
+  clear: '晴',
+  cloudy: '陰',
+  rain: '雨',
+};
 
 const world = new World(stage, {
   onHoverSpot: (id) => {
@@ -112,6 +125,10 @@ const world = new World(stage, {
     store.markMet(id);
     store.pushLog({ islandId: resident.islandId, spotId: null, text: `遇見 ${resident.name}` });
     updateMascot(null, id);
+  },
+  onBossIsland: (fruitId) => {
+    store.set({ bossIslandId: fruitId });
+    updateStatus(store.state);
   },
   onFrame: () => {
     if (firstFrame) {
@@ -163,6 +180,11 @@ store.on(['toggles'], (s) => {
 
 store.on(['month', 'families'], (s) => {
   world.setIslandFilter(s.month, s.families);
+  updateStatus(s);
+});
+
+store.on(['weather'], (s) => {
+  world.setWeather(s.weather);
   updateStatus(s);
 });
 
@@ -258,7 +280,19 @@ window.addEventListener('keydown', (e) => {
 // ---- 初始化顯示 ----
 
 const sideMeta = must<HTMLElement>('#side-meta');
-sideMeta.innerHTML = `${TOTAL_ISLANDS} 座水果島 ＋ 政策島　／<br>${TOTAL_SPOTS} 個知識點 ／ ${TOTAL_RESIDENTS} 位居民<br>選一座島，走進它的果園風景。`;
+const fruitIslandCount = ALL_ISLANDS.length - MAIN_ISLAND_IDS.length;
+sideMeta.innerHTML = `${fruitIslandCount} 座水果島 ＋ ${MAIN_ISLAND_IDS.length} 座主島（第一／第二果菜市場）<br>${TOTAL_ALL_SPOTS} 個知識點 ／ ${TOTAL_RESIDENTS} 位居民在路上走<br>大家都用橋互通，走到哪學到哪。`;
+
+// 頁籤上的數字（島數／知識點數／居民數）直接由資料算出來，不用手改
+const tabCounts: { id: string; count: number }[] = [
+  { id: '#tab-islands', count: TOTAL_ALL_ISLANDS },
+  { id: '#tab-spots', count: TOTAL_ALL_SPOTS },
+  { id: '#tab-residents', count: TOTAL_RESIDENTS },
+];
+for (const t of tabCounts) {
+  const node = document.querySelector<HTMLButtonElement>(t.id);
+  if (node) node.textContent = `${node.textContent?.split(' ')[0] ?? ''} ${t.count}`;
+}
 
 world.setTime(store.state.minutes);
 world.setIslandFilter(store.state.month, store.state.families);

@@ -3,14 +3,8 @@ import type { Resident } from '../data/types';
 import { bake, part, type Part } from './bake';
 import { residentLabel, type Label } from './labels';
 
-export interface NpcLoop {
-  radius: number;
-  angle: number;
-  speed: number;
-}
-
 export interface NpcView {
-  /** 位置 + 朝向 */
+  /** 位置 + 朝向（世界座標，由 roam 系統驅動） */
   root: THREE.Group;
   /** 走路擺動的內層 */
   anim: THREE.Group;
@@ -19,7 +13,6 @@ export interface NpcView {
   material: THREE.MeshStandardMaterial;
   label: Label;
   data: { islandId: string; residentId: string };
-  loop: NpcLoop;
   phase: number;
   baseScale: number;
   /** 0→1 出現動畫 */
@@ -57,7 +50,7 @@ function darken(hex: string, amount: number): string {
   return `#${c.getHexString()}`.toUpperCase();
 }
 
-export function createNpc(resident: Resident, index: number, total: number): NpcView {
+export function createNpc(resident: Resident, index: number): NpcView {
   const head = new THREE.Color(resident.color);
   const uniform = new THREE.Color(resident.uniform);
   const torsoColor = `#${uniform.getHexString()}`;
@@ -148,17 +141,6 @@ export function createNpc(resident: Resident, index: number, total: number): Npc
   setHidden(label, true);
   root.add(label.obj);
 
-  // 環島散步：每人一條自己的圓形步道，全部落在環島步道帶內
-  const lane = total > 1 ? index / (total - 1) : 0.5;
-  const radius = 3.66 + lane * 1.02;
-  const loop: NpcLoop = {
-    radius,
-    angle: (index * 2.399963) % (Math.PI * 2),
-    speed: 0.26 + ((index % 5) * 0.035),
-  };
-  root.position.set(Math.cos(loop.angle) * radius, 1.5, Math.sin(loop.angle) * radius);
-  root.rotation.y = -loop.angle;
-
   const view: NpcView = {
     root,
     anim,
@@ -167,7 +149,6 @@ export function createNpc(resident: Resident, index: number, total: number): Npc
     material,
     label,
     data: { islandId: resident.islandId, residentId: resident.id },
-    loop,
     phase: index * 1.31,
     baseScale: resident.boss ? 1.16 : 1,
     appear: 0,
@@ -186,12 +167,6 @@ export function updateNpc(view: NpcView, t: number, dt: number, visible: boolean
   const show = view.appear > 0.03;
   view.root.visible = show;
   if (!show) return;
-
-  view.loop.angle += view.loop.speed * dt;
-  const { radius, angle } = view.loop;
-  view.root.position.x = Math.cos(angle) * radius;
-  view.root.position.z = Math.sin(angle) * radius;
-  view.root.rotation.y = -angle;
 
   const stride = t * 6.4 + view.phase;
   view.anim.position.y = Math.abs(Math.sin(stride)) * 0.055;

@@ -3,16 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { ALL_ISLANDS } from '../data/atlas';
 import { FRUIT_BY_ID } from '../data/fruits';
-import type { ToggleKey } from '../data/types';
-export type { ToggleKey };
-import {
-  createIsland,
-  updateIsland,
-  updateIslandNpcLabels,
-  type IslandView,
-} from './island';
+import type { ToggleKey, WeatherKey } from '../data/types';
+export type { ToggleKey, WeatherKey };
+import { createIsland, updateIsland, type IslandView } from './island';
 import { updateTree, type TreeView } from './tree';
 import type { NpcView } from './npc';
+import { createCrowd, npcIslandId, npcWorldPosition, setCrowdLabels, updateCrowd, type Crowd } from './crowd';
 import { buildBridges } from './bridges';
 import { Ocean } from './water';
 import { buildFlows, updateFlows, type FlowView } from './flows';
@@ -25,6 +21,8 @@ export interface WorldCallbacks {
   onSelectIsland(fruitId: string): void;
   onHoverResident(residentId: string | null): void;
   onSelectResident(residentId: string): void;
+  /** 吳總巡視時抵達了哪一座島 */
+  onBossIsland(fruitId: string | null): void;
   onFrame(): void;
 }
 
@@ -40,9 +38,6 @@ interface Flight {
 // 島嶼被橋連成一片後群島變大了，全景鏡頭要再退後一點
 const HOME_POS = new THREE.Vector3(2, 68, 84);
 const HOME_TARGET = new THREE.Vector3(2, 0, 4);
-
-/** 鏡頭離島中心多近才讓居民開始走動 */
-const NPC_ACTIVE_DISTANCE = 46;
 
 const SKY_VERT = /* glsl */ `
 varying vec3 vWorldPosition;
@@ -81,6 +76,14 @@ export class World {
   readonly islandMap = new Map<string, IslandView>();
   readonly treeIndex = new Map<string, TreeView>();
   readonly npcIndex = new Map<string, NpcView>();
+  /** 群島上的所有人（跨島巡走由 crowd 統一驅動） */
+  private crowd: Crowd | null = null;
+  private readonly rain = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({ color: 0xdceafb, transparent: true, opacity: 0.5 }),
+  );
+  private readonly bossPos = new THREE.Vector3();
+  private bossIsland: string | null = null;
 
   private readonly ocean: Ocean;
   private readonly sun: THREE.DirectionalLight;
@@ -123,7 +126,10 @@ export class World {
     freeze: false,
     bird: false,
     log: false,
+    patrol: false,
   };
+
+  weather: WeatherKey = 'clear';
 
   constructor(
     private readonly container: HTMLElement,
@@ -216,15 +222,19 @@ export class World {
         this.treeIndex.set(spotId, tree);
         this.pickables.push(tree.pick);
       }
-      for (const [residentId, npc] of view.npcs) {
-        this.npcIndex.set(residentId, npc);
-        this.pickables.push(npc.body, npc.shadow);
-      }
     }
 
     // 橋：把六角格上相鄰的島連起來，整片群島才走得通
     this.bridges = buildBridges(this.islands);
     this.scene.add(this.bridges);
+
+    // 人：一個統一的群眾系統，所有人都能沿著橋在島之間穿梭
+    this.crowd = createCrowd(this.islands);
+    this.scene.add(this.crowd.group);
+    for (const [residentId, npc] of this.crowd.byId) {
+      this.npcIndex.set(residentId, npc);
+      this.pickables.push(npc.body, npc.shadow);
+    }
 
     const built = buildFlows(this.islands);
     this.flowGroup = built.group;
@@ -233,11 +243,37 @@ export class World {
     this.scene.add(this.flowGroup);
 
     this.createClouds();
+    this.createRain();
     this.bindEvents();
     this.setTime(720);
+    this.setWeather('clear');
     this.applySky(this.skyNow);
     // 初始只顯示島嶼名牌，知識點名牌等 hover / 選取才出現
     this.updateLabelVisibility();
+  }
+
+  /** 雨：一小片跟著鏡頭走的落雨線段（每一滴 = 兩個端點） */
+  private createRain(): void {
+    const count = 1400;
+    const pos = new Float32Array(count * 6);
+    const spread = 85;
+    for (let i = 0; i < count; i++) {
+      const x = (Math.random() - 0.5) * spread * 2;
+      const y = Math.random() * 55;
+      const z = (Math.random() - 0.5) * spread * 2;
+      pos[i * 6] = x;
+      pos[i * 6 + 1] = y;
+      pos[i * 6 + 2] = z;
+      pos[i * 6 + 3] = x + 0.07;
+      pos[i * 6 + 4] = y + 0.85;
+      pos[i * 6 + 5] = z;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.rain.geometry = geo;
+    this.rain.visible = false;
+    this.rain.frustumCulled = false;
+    this.scene.add(this.rain);
   }
 
   private createClouds(): void {
@@ -392,10 +428,10 @@ export class World {
         setLabelVisible(tree.label, show);
         setLabelActive(tree.label, tree.selected);
       }
-      updateIslandNpcLabels(
-        isl,
-        this.toggles.people && showNames && isl === this.selectedIsland,
-      );
+    }
+    if (this.crowd) {
+      const id = this.toggles.people && showNames ? (selId ?? hovId) : null;
+      setCrowdLabels(this.crowd, id, !!id);
     }
   }
 
@@ -460,18 +496,19 @@ export class World {
   /** 飛到某位居民面前（居民會一直走，所以先算出他當下的位置） */
   focusResident(residentId: string): void {
     const npc = this.npcIndex.get(residentId);
-    if (!npc) {
-      this.focusIsland(residentId.split(':')[0]);
-      return;
-    }
-    npc.root.updateWorldMatrix(true, false);
-    const wp = new THREE.Vector3();
-    npc.root.getWorldPosition(wp);
+    if (!npc) return;
+    npcWorldPosition(npc, this.bossPos);
+    const wp = this.bossPos.clone();
     const target = wp.clone().add(new THREE.Vector3(0, 0.6, 0));
     const offset = this.birdOn
       ? new THREE.Vector3(0, 16, 0.01)
       : new THREE.Vector3(1.6, 2.6, 3.2);
     this.flyTo(target.clone().add(offset), target, 0.85);
+  }
+
+  /** 吳總現在在哪一座島（巡視模式用它顯示字幕） */
+  get bossLocation(): { islandId: string | null } {
+    return { islandId: this.bossIsland };
   }
 
   resetView(): void {
@@ -485,13 +522,45 @@ export class World {
     sunPosition(minutes, this.sunGoal);
   }
 
+  /** 天氣：晴／陰／雨。影響光線、天空與霧，下雨時落下粒子 */
+  setWeather(key: WeatherKey): void {
+    this.weather = key;
+    // 雲的高度與顏色跟著天氣走（晴天才又白又高）
+    this.rain.visible = key === 'rain';
+    for (const cloud of this.clouds.children) {
+      for (const lump of cloud.children) {
+        const mat = (lump as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        mat.color.set(key === 'clear' ? '#FFFFFF' : key === 'cloudy' ? '#DDE3EA' : '#9FA8B4');
+        mat.opacity = key === 'clear' ? 0.86 : key === 'cloudy' ? 0.92 : 0.96;
+      }
+      cloud.visible = key !== 'clear' || true;
+    }
+    this.applySky(this.skyNow);
+  }
+
+  /** 巡視模式：把鏡頭黏在吳總身後，跟著他走遍群島 */
+  private followBoss(snap: boolean): void {
+    const boss = this.crowd?.boss ?? null;
+    if (!boss) return;
+    npcWorldPosition(boss, this.bossPos);
+    const target = this.bossPos.clone().add(new THREE.Vector3(0, 0.7, 0));
+    const desired = target.clone().add(new THREE.Vector3(2.6, 3.4, 5.2));
+    const k = snap ? 1 : Math.min(1, 0.09);
+    this.camera.position.lerp(desired, k);
+    this.controls.target.lerp(target, k);
+  }
+
   setToggle(key: ToggleKey, value: boolean): void {
     this.toggles[key] = value;
     if (key === 'freeze') this.frozen = value;
     if (key === 'flows') this.flowGroup.visible = value;
-    if (key === 'people') {
-      for (const isl of this.islands) isl.npcRoot.visible = value;
+    if (key === 'people' && this.crowd) {
+      this.crowd.group.visible = value;
       this.updateLabelVisibility();
+    }
+    if (key === 'patrol') {
+      this.controls.enabled = !value;
+      if (value) this.followBoss(true);
     }
     if (key === 'fruits') {
       for (const tree of this.treeIndex.values()) {
@@ -506,10 +575,10 @@ export class World {
     if (key === 'names') this.updateLabelVisibility();
   }
 
-  /** 依「月份」與「科別」條件調整島嶼亮度（當令者會微微發光）；政策島不參與水果篩選 */
+  /** 依「月份」與「科別」條件調整島嶼亮度（當令者會微微發光）；主島不參與水果篩選 */
   setIslandFilter(month: number | null, families: string[]): void {
     for (const isl of this.islands) {
-      if (isl.policy) {
+      if (isl.main) {
         isl.inSeason = true;
         setLabelActive(isl.label, true);
         continue;
@@ -553,13 +622,14 @@ export class World {
 
     const peopleOn = this.toggles.people;
     for (const isl of this.islands) {
-      // 居民只在靠近時活動，省效能也避免遠處一堆小人在飄
-      const dist = this.camera.position.distanceTo(isl.center);
-      isl.npcActive = peopleOn && dist < NPC_ACTIVE_DISTANCE;
-      isl.npcRoot.visible = peopleOn;
       updateIsland(isl, t, dt);
       for (const tree of isl.trees.values()) updateTree(tree, t, dt);
     }
+
+    // 所有人一起動：跨島巡走、上橋拱道、距離太遠的自動休眠
+    if (this.crowd) updateCrowd(this.crowd, this.camera, t, dt, peopleOn);
+
+    if (this.weather === 'rain' && !this.frozen) this.updateRain(dt);
 
     if (this.flowGroup.visible) updateFlows(this.flows, t, this.islandMap);
 
@@ -573,7 +643,10 @@ export class World {
     this.sunNow.lerp(this.sunGoal, k);
     this.applySky(this.skyNow);
 
-    if (this.flight) {
+    if (this.toggles.patrol) {
+      this.followBoss(false);
+      this.controls.update();
+    } else if (this.flight) {
       const f = this.flight;
       f.elapsed += dt;
       const p = easeInOutCubic(Math.min(1, f.elapsed / f.duration));
@@ -581,6 +654,7 @@ export class World {
       this.controls.target.lerpVectors(f.fromTarget, f.toTarget, p);
       if (p >= 1) this.flight = null;
     }
+    this.trackBoss();
 
     this.updateHover();
     this.controls.update();
@@ -601,21 +675,75 @@ export class World {
     };
   }
 
+  /** 追蹤吳總所在島，切換時通知 UI（「吳總正在巡視：芒果島」） */
+  private trackBoss(): void {
+    const boss = this.crowd?.boss ?? null;
+    if (!boss) return;
+    const id = npcIslandId(this.crowd!, boss.data.residentId);
+    if (id !== this.bossIsland) {
+      this.bossIsland = id;
+      this.cb.onBossIsland(id);
+    }
+  }
+
+  private updateRain(dt: number): void {
+    const attr = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const cx = this.camera.position.x;
+    const cz = this.camera.position.z;
+    const fall = 30 * dt;
+    for (let i = 0; i < arr.length; i += 6) {
+      arr[i + 1] -= fall;
+      arr[i + 4] -= fall;
+      if (arr[i + 1] < -2) {
+        const y = 40 + Math.random() * 16;
+        const x = cx + (Math.random() - 0.5) * 150;
+        const z = cz + (Math.random() - 0.5) * 150;
+        arr[i] = x;
+        arr[i + 1] = y;
+        arr[i + 2] = z;
+        arr[i + 3] = x + 0.07;
+        arr[i + 4] = y + 0.85;
+        arr[i + 5] = z;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+
   private applySky(s: SkyState): void {
-    (this.skyMat.uniforms.topColor.value as THREE.Color).copy(s.skyTop);
-    (this.skyMat.uniforms.bottomColor.value as THREE.Color).copy(s.skyBottom);
-    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(s.fog);
+    const w = WEATHER_FACTOR[this.weather];
+    (this.skyMat.uniforms.topColor.value as THREE.Color).copy(s.skyTop).lerp(GRAY_TOP, w.gray);
+    (this.skyMat.uniforms.bottomColor.value as THREE.Color)
+      .copy(s.skyBottom)
+      .lerp(GRAY_BOTTOM, w.gray);
+    if (this.scene.fog) {
+      const fog = this.scene.fog as THREE.Fog;
+      fog.color.copy(s.fog).lerp(GRAY_BOTTOM, w.gray * 0.8);
+      fog.near = 110 * w.fogNear;
+      fog.far = 420 * w.fogFar;
+    }
     this.sun.color.copy(s.sunColor);
-    this.sun.intensity = s.sunIntensity;
+    this.sun.intensity = s.sunIntensity * w.sun;
     this.hemi.color.copy(s.hemiSky);
     this.hemi.groundColor.copy(s.hemiGround);
-    this.hemi.intensity = s.hemiIntensity;
+    this.hemi.intensity = s.hemiIntensity * w.hemi;
     this.ambient.color.copy(s.ambientColor);
-    this.ambient.intensity = s.ambientIntensity;
-    this.ocean.setColor(s.waterColor);
+    this.ambient.intensity = s.ambientIntensity * w.ambient;
+    this.ocean.setColor(s.waterColor.clone().lerp(RAIN_WATER, w.gray * 0.55));
     this.sun.position.copy(this.sunNow);
   }
 }
+
+/** 天氣對環境光的加成／衰減 */
+const WEATHER_FACTOR: Record<WeatherKey, { sun: number; hemi: number; ambient: number; gray: number; fogNear: number; fogFar: number }> = {
+  clear: { sun: 1, hemi: 1, ambient: 1, gray: 0, fogNear: 1, fogFar: 1 },
+  cloudy: { sun: 0.55, hemi: 1.02, ambient: 1.05, gray: 0.45, fogNear: 0.8, fogFar: 0.78 },
+  rain: { sun: 0.22, hemi: 1.06, ambient: 1.14, gray: 0.62, fogNear: 0.55, fogFar: 0.5 },
+};
+
+const GRAY_TOP = new THREE.Color('#9FB6C6');
+const GRAY_BOTTOM = new THREE.Color('#C8D4DC');
+const RAIN_WATER = new THREE.Color('#5E7E96');
 
 function hasPeak(fruitId: string, month: number): boolean {
   return FRUIT_BY_ID[fruitId]?.peak.includes(month) ?? false;

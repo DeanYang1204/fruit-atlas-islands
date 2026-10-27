@@ -1,6 +1,17 @@
 export type TimeKey = 'dawn' | 'day' | 'dusk' | 'night';
 
-export type ToggleKey = 'names' | 'fruits' | 'people' | 'flows' | 'freeze' | 'bird' | 'log';
+export type ToggleKey =
+  | 'names'
+  | 'fruits'
+  | 'people'
+  | 'flows'
+  | 'freeze'
+  | 'bird'
+  | 'log'
+  | 'patrol';
+
+/** 天氣模式：晴／陰天／下雨，影響光線、天空、霧氣與雨絲 */
+export type WeatherKey = 'clear' | 'cloudy' | 'rain';
 
 /** 島上居民的兩種身分：水果品種化身／北農員工 */
 export type ResidentKind = 'variety' | 'staff';
@@ -8,7 +19,7 @@ export type ResidentKind = 'variety' | 'staff';
 export interface Resident {
   /** 全域唯一 id */
   id: string;
-  /** 所屬島 id（水果 id 或 policy） */
+  /** 所屬（出生）島 id：水果 id、market1 或 market2。可以自由走到別的島 */
   islandId: string;
   kind: ResidentKind;
   /** 顯示名稱，例：愛文人 */
@@ -17,7 +28,7 @@ export interface Resident {
   short: string;
   /** 身分標籤，例：芒果品種 */
   role: string;
-  /** 是否為政策島的唯一 BOSS（總經理） */
+  /** 是否為 BOSS（北農總經理吳總，全群島只有一位） */
   boss: boolean;
   lead: string;
   points: string[];

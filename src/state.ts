@@ -1,4 +1,4 @@
-import type { TimeKey, ToggleKey } from './data/types';
+import type { TimeKey, ToggleKey, WeatherKey } from './data/types';
 
 export interface LogEntry {
   id: number;
@@ -42,6 +42,10 @@ export interface AppState {
   playing: boolean;
   /** 圖層開關 */
   toggles: Record<ToggleKey, boolean>;
+  /** 天氣模式 */
+  weather: WeatherKey;
+  /** 吳總目前巡視到哪一座島 */
+  bossIslandId: string | null;
 }
 
 type Keys = keyof AppState;
@@ -99,7 +103,10 @@ class Store {
       freeze: false,
       bird: false,
       log: false,
+      patrol: false,
     },
+    weather: 'clear',
+    bossIslandId: null,
   };
 
   private listeners: { keys: Set<Keys> | null; fn: Listener }[] = [];

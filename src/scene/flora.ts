@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isMarket } from '../data/markets';
 
 /**
  * 植物／建築造型工廠。
@@ -9,7 +10,7 @@ import * as THREE from 'three';
  *   鳳梨   → 貼地蓮座劍葉 + 頂生果實（完全沒有莖）
  *   木瓜   → 單一假莖 + 頂生掌狀葉，果實貼著莖長
  *   其餘   → 各自的喬木（樹型、樹冠、果實形狀都不同）
- *   政策島 → 北農的建築與設施
+ *   主島   → 北農的建築與設施（一市／二市各有自己的配置）
  */
 
 export interface PlantKit {
@@ -421,7 +422,7 @@ function papayaPlant(accent: string): PlantKit {
   return { body, fruits, glow, labelY: 2.1, pickY: 0.8 };
 }
 
-// ---------- 政策島：北農的建築與設施（動森公共設施風） ----------
+// ---------- 主島：北農的建築與設施（動森公共設施風） ----------
 
 const NAVY = '#2F6690';
 const CREAM = '#F4EFE4';
@@ -858,13 +859,20 @@ const BUILDERS: Record<string, (accent: string) => PlantKit> = {
     }),
 };
 
-const POLICY_BUILDINGS: Record<string, (glow: THREE.MeshStandardMaterial[]) => PlantKit> = {
-  basics: cityHall,
-  org: auctionHall,
-  rule: auctionMachine,
-  season: clockTower,
-  origin: truckDock,
-  market: dataBoard,
+/** 主島建築：靠 (島 id, 知識點種類) 決定要蓋哪一棟 */
+const MARKET_BUILDINGS: Record<string, Record<string, (glow: THREE.MeshStandardMaterial[]) => PlantKit>> = {
+  market1: {
+    basics: cityHall,
+    org: auctionHall,
+    season: clockTower,
+    market: dataBoard,
+  },
+  market2: {
+    basics: cityHall,
+    org: dataBoard,
+    rule: auctionMachine,
+    origin: truckDock,
+  },
 };
 
 export function createPlant(
@@ -872,8 +880,9 @@ export function createPlant(
   spotKind: string,
   accent: string,
 ): PlantKit {
-  if (fruitId === 'policy') {
-    const build = POLICY_BUILDINGS[spotKind] ?? dataBoard;
+  if (isMarket(fruitId)) {
+    const table = MARKET_BUILDINGS[fruitId] ?? {};
+    const build = table[spotKind] ?? dataBoard;
     const glow: THREE.MeshStandardMaterial[] = [];
     return { ...build(glow), sway: 0 };
   }

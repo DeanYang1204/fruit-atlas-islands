@@ -1,4 +1,12 @@
-import { ALL_ISLAND_BY_ID, ALL_SPOT_BY_ID, ISLAND_FRUIT_BY_ID, islandName, MONTHS } from '../data/atlas';
+import {
+  ALL_ISLAND_BY_ID,
+  ALL_SPOT_BY_ID,
+  ISLAND_FRUIT_BY_ID,
+  MONTHS,
+  islandLabelName,
+  islandName,
+  isMainIsland,
+} from '../data/atlas';
 import { RESIDENT_BY_ID, RESIDENTS_BY_ISLAND } from '../data/residents';
 import type { Fruit, Resident, Spot } from '../data/types';
 import { store, type AppState } from '../state';
@@ -87,12 +95,17 @@ function renderResident(content: HTMLElement, r: Resident, islandFruit: Fruit, s
   const head = el('div', 'card-head');
   head.style.setProperty('--c', r.color);
   const kind = el('span', 'kind', r.boss ? 'BOSS' : r.kind === 'staff' ? '北農員工' : '水果居民');
-  const homeLabel = islandFruit.name.endsWith('島') ? islandFruit.name : `${islandFruit.name}島`;
+  // 主島已經叫「第一果菜市場」，不用再補「島」字
+  const homeLabel = islandLabelName(islandFruit.id);
+  const movedNote = r.boss
+    ? '｜目前正在各島之間巡視'
+    : '｜會沿著橋走到別的島串門子';
   head.append(
     kind,
     el('h2', undefined, r.name),
     el('p', 'sub', `${r.role}｜住在${homeLabel}`),
     el('p', 'lead', r.lead),
+    el('p', 'card-tip', movedNote.trim()),
   );
   content.append(head);
 
@@ -114,7 +127,7 @@ function renderResident(content: HTMLElement, r: Resident, islandFruit: Fruit, s
   const metBtn = el('button', 'btn ghost', met ? '✓ 已認識' : '打過招呼');
   metBtn.dataset.act = 'met';
   metBtn.disabled = met;
-  const home = el('button', 'btn', `看${islandFruit.name}島`);
+  const home = el('button', 'btn', `看${homeLabel}`);
   home.dataset.act = 'home-island';
   actions.append(metBtn, home);
   content.append(actions);
@@ -171,12 +184,12 @@ function renderSpot(content: HTMLElement, spot: Spot, fruit: Fruit, s: AppState)
 function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
   const island = ALL_ISLAND_BY_ID[fruit.id];
   const people = island ? RESIDENTS_BY_ISLAND[fruit.id] ?? [] : [];
-  const isPolicy = fruit.id === 'policy';
+  const isMain = isMainIsland(fruit.id);
 
   const head = el('div', 'card-head');
   head.style.setProperty('--c', fruit.color);
   head.append(
-    el('span', 'kind', isPolicy ? '行政中樞' : '水果島'),
+    el('span', 'kind', isMain ? '主島・果菜批發市場' : '水果島'),
     el('h2', undefined, fruit.name),
     el('p', 'sub', `${fruit.en}・${fruit.sci}`),
     el('p', 'lead', fruit.tagline),
@@ -187,10 +200,10 @@ function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
 
   const dl = el('dl', 'facts');
   addFact(dl, '別名', fruit.alias);
-  addFact(dl, isPolicy ? '所屬體系' : '科別', fruit.family);
-  addFact(dl, isPolicy ? '作業時間' : '產季', fruit.harvestNote);
-  addFact(dl, isPolicy ? '主要場區' : '主要產地', fruit.regions.map((r) => r.name).join('、'));
-  if (!isPolicy) addFact(dl, '代表品種', fruit.varieties.map((v) => v.name).join('、'));
+  addFact(dl, isMain ? '所屬體系' : '科別', fruit.family);
+  addFact(dl, isMain ? '作業時間' : '產季', fruit.harvestNote);
+  addFact(dl, isMain ? '主要場區' : '主要產地', fruit.regions.map((r) => r.name).join('、'));
+  if (!isMain) addFact(dl, '代表品種', fruit.varieties.map((v) => v.name).join('、'));
   content.append(dl);
 
   const actions = el('div', 'card-actions');
@@ -204,7 +217,7 @@ function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
   // 島上居民一覽，點名字就能飛到他面前
   if (people.length > 0) {
     const peopleHead = el('div', 'people-head');
-    peopleHead.append(el('b', undefined, isPolicy ? '島上的北農員工' : '島上的水果居民'));
+    peopleHead.append(el('b', undefined, isMain ? '在這裡上班的北農員工' : '島上的水果居民'));
     peopleHead.append(el('span', undefined, `${people.length} 位`));
     content.append(peopleHead);
 
