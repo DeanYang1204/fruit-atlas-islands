@@ -13,6 +13,7 @@ import {
 } from './island';
 import { updateTree, type TreeView } from './tree';
 import type { NpcView } from './npc';
+import { buildBridges } from './bridges';
 import { Ocean } from './water';
 import { buildFlows, updateFlows, type FlowView } from './flows';
 import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
@@ -36,7 +37,8 @@ interface Flight {
   duration: number;
 }
 
-const HOME_POS = new THREE.Vector3(2, 60, 72);
+// 島嶼被橋連成一片後群島變大了，全景鏡頭要再退後一點
+const HOME_POS = new THREE.Vector3(2, 68, 84);
 const HOME_TARGET = new THREE.Vector3(2, 0, 4);
 
 /** 鏡頭離島中心多近才讓居民開始走動 */
@@ -93,6 +95,7 @@ export class World {
 
   private flows: FlowView[] = [];
   private flowGroup = new THREE.Group();
+  private bridges = new THREE.Group();
   private hovered: TreeView | null = null;
   private hoveredNpc: NpcView | null = null;
   private hoveredIsland: IslandView | null = null;
@@ -172,10 +175,10 @@ export class World {
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 260;
-    this.sun.shadow.camera.left = -48;
-    this.sun.shadow.camera.right = 48;
-    this.sun.shadow.camera.top = 48;
-    this.sun.shadow.camera.bottom = -48;
+    this.sun.shadow.camera.left = -58;
+    this.sun.shadow.camera.right = 58;
+    this.sun.shadow.camera.top = 58;
+    this.sun.shadow.camera.bottom = -58;
     this.sun.shadow.bias = -0.0007;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.ambient, this.hemi, this.sun, this.sun.target);
@@ -218,6 +221,10 @@ export class World {
         this.pickables.push(npc.body, npc.shadow);
       }
     }
+
+    // 橋：把六角格上相鄰的島連起來，整片群島才走得通
+    this.bridges = buildBridges(this.islands);
+    this.scene.add(this.bridges);
 
     const built = buildFlows(this.islands);
     this.flowGroup = built.group;

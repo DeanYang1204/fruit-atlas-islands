@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Resident } from '../data/types';
+import { bake, part, type Part } from './bake';
 import { residentLabel, type Label } from './labels';
 
 export interface NpcLoop {
@@ -44,37 +44,6 @@ const SHADOW_MAT = new THREE.MeshBasicMaterial({
   opacity: 0.2,
   depthWrite: false,
 });
-
-interface Part {
-  geo: THREE.BufferGeometry;
-  color: THREE.Color;
-}
-
-/** 把身體各部位合併成單一幾何體，一次 draw call 畫完一個居民 */
-function bake(parts: Part[]): THREE.BufferGeometry {
-  const prepared = parts.map(({ geo, color }) => {
-    const g = geo.toNonIndexed();
-    geo.dispose();
-    const count = g.attributes.position.count;
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    return g;
-  });
-  const merged = mergeGeometries(prepared, false) ?? new THREE.BufferGeometry();
-  prepared.forEach((g) => g.dispose());
-  return merged;
-}
-
-function part(source: THREE.BufferGeometry, color: string, transform: (g: THREE.BufferGeometry) => void): Part {
-  const geo = source.clone();
-  transform(geo);
-  return { geo, color: new THREE.Color(color) };
-}
 
 function darken(hex: string, amount: number): string {
   const c = new THREE.Color(hex);
@@ -143,9 +112,9 @@ export function createNpc(resident: Resident, index: number, total: number): Npc
   setHidden(label, true);
   root.add(label.obj);
 
-  // 環島散步：每人一條自己的圓形步道
+  // 環島散步：每人一條自己的圓形步道，全部落在環島步道帶內
   const lane = total > 1 ? index / (total - 1) : 0.5;
-  const radius = 4.02 + lane * 1.16;
+  const radius = 3.66 + lane * 1.02;
   const loop: NpcLoop = {
     radius,
     angle: (index * 2.399963) % (Math.PI * 2),
