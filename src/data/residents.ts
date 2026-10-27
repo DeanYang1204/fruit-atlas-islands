@@ -3,9 +3,10 @@ import { POLICY_FRUIT, POLICY_ID } from './policy';
 import { monthLabel } from './spots';
 import type { Resident } from './types';
 
-/** 北農員工制服色 */
-const UNIFORM_STAFF = '#2F6690';
-const UNIFORM_BOSS = '#1B3A5C';
+/** 北農員工制服色（深藍襯衫，見實際制服照） */
+const UNIFORM_STAFF = '#1E3A6B';
+/** 吳總：灰色西裝外套 */
+const UNIFORM_BOSS = '#8E9299';
 
 /** 與其他水果島同名的短稱要避開（例：釋迦鳳梨的「釋迦」、芒果鳳梨的「芒果」） */
 const FRUIT_NAMES = new Set(FRUITS.map((f) => f.name));
@@ -92,12 +93,12 @@ interface StaffSeed {
 const STAFF_SEEDS: StaffSeed[] = [
   {
     key: 'gm',
-    short: '總經理',
+    short: '吳總',
     role: '北農總經理（全島唯一的 BOSS）',
     boss: true,
-    lead: '這座島我說了算。市場怎麼運轉、人怎麼調度，最後都到我桌上。',
+    lead: '大家叫我吳總。這座島我說了算——市場怎麼運轉、人怎麼調度，最後都到我桌上。',
     points: [
-      '身分｜台北農產運銷公司最高行政負責人，對內統籌全公司，對外代表公司。',
+      '身分｜台北農產運銷公司總經理，公司最高行政負責人，同仁都稱他「吳總」。',
       '職掌｜督導第一、第二果菜批發市場的拍賣、分貨、結算與人事。',
       '定位｜不是水果，是讓水果賣得出去的那個人。',
       '※ 本島唯一的 BOSS，其他全部是一般員工。',
@@ -204,7 +205,7 @@ function buildStaffResidents(): Resident[] {
     id: `${POLICY_ID}:${seed.key}`,
     islandId: POLICY_ID,
     kind: 'staff' as const,
-    name: `${seed.short}人`,
+    name: seed.boss ? seed.short : `${seed.short}人`,
     short: seed.short,
     role: seed.role,
     boss: seed.boss === true,

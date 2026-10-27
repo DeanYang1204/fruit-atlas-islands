@@ -32,11 +32,17 @@ const HEAD_GEO = new THREE.SphereGeometry(0.235, 10, 8);
 const STEM_GEO = new THREE.CylinderGeometry(0.028, 0.036, 0.13, 5);
 const LEAF_GEO = new THREE.SphereGeometry(0.085, 6, 4);
 const TORSO_GEO = new THREE.CylinderGeometry(0.155, 0.2, 0.38, 8);
-const BAND_GEO = new THREE.CylinderGeometry(0.215, 0.215, 0.055, 8);
 const ARM_GEO = new THREE.CylinderGeometry(0.045, 0.04, 0.28, 6);
 const LEG_GEO = new THREE.CylinderGeometry(0.058, 0.05, 0.26, 6);
 const EYE_GEO = new THREE.SphereGeometry(0.032, 6, 5);
 const SHADOW_GEO = new THREE.CircleGeometry(0.3, 14);
+/** 員工黑頭帶 */
+const HEADBAND_GEO = new THREE.CylinderGeometry(0.242, 0.246, 0.075, 10);
+/** 制服胸前的紅色滾邊條 */
+const STRIPE_GEO = new THREE.BoxGeometry(0.032, 0.3, 0.022);
+/** 眼鏡：兩個鏡框 + 鼻橋 */
+const LENS_GEO = new THREE.TorusGeometry(0.055, 0.012, 6, 14);
+const BRIDGE_GEO = new THREE.BoxGeometry(0.07, 0.014, 0.014);
 
 const SHADOW_MAT = new THREE.MeshBasicMaterial({
   color: 0x241505,
@@ -55,16 +61,17 @@ export function createNpc(resident: Resident, index: number, total: number): Npc
   const head = new THREE.Color(resident.color);
   const uniform = new THREE.Color(resident.uniform);
   const torsoColor = `#${uniform.getHexString()}`;
-  const trousers = darken(resident.uniform, 0.42);
+  const isStaff = resident.kind === 'staff';
+  // 員工黑長褲；吳總灰格紋褲（低面數簡化成淺灰）；水果居民沿制服色調深
+  const trousers = resident.boss
+    ? '#A9ACB3'
+    : isStaff
+      ? '#23262E'
+      : darken(resident.uniform, 0.42);
 
   const parts: Part[] = [
     part(TORSO_GEO, torsoColor, (g) => g.translate(0, 0.42, 0)),
     part(HEAD_GEO, resident.color, (g) => g.translate(0, 0.79, 0)),
-    part(STEM_GEO, '#5C7A3A', (g) => g.translate(0, 1.0, 0)),
-    part(LEAF_GEO, '#6FA349', (g) => {
-      g.scale(1, 0.42, 1.5);
-      g.translate(0.1, 1.04, 0.03);
-    }),
     part(ARM_GEO, torsoColor, (g) => {
       g.rotateZ(0.62);
       g.translate(-0.2, 0.46, 0);
@@ -79,9 +86,38 @@ export function createNpc(resident: Resident, index: number, total: number): Npc
     part(EYE_GEO, '#2C2118', (g) => g.translate(0.078, 0.81, 0.205)),
   ];
 
-  if (resident.boss) {
-    // BOSS 專屬：金色職務帶
-    parts.push(part(BAND_GEO, '#D8A93A', (g) => g.translate(0, 0.6, 0)));
+  if (isStaff) {
+    // 北農員工：黑頭帶
+    parts.push(part(HEADBAND_GEO, '#23272E', (g) => g.translate(0, 0.9, 0)));
+    if (resident.boss) {
+      // 吳總：眼鏡（灰西裝已在制服色呈現）
+      parts.push(
+        part(LENS_GEO, '#2C2118', (g) => g.translate(-0.078, 0.81, 0.21)),
+        part(LENS_GEO, '#2C2118', (g) => g.translate(0.078, 0.81, 0.21)),
+        part(BRIDGE_GEO, '#2C2118', (g) => g.translate(0, 0.815, 0.212)),
+      );
+    } else {
+      // 一般員工：深藍襯衫上的紅色滾邊
+      parts.push(
+        part(STRIPE_GEO, '#C8375A', (g) => {
+          g.rotateY(0.16);
+          g.translate(-0.052, 0.42, 0.168);
+        }),
+        part(STRIPE_GEO, '#C8375A', (g) => {
+          g.rotateY(-0.16);
+          g.translate(0.052, 0.42, 0.168);
+        }),
+      );
+    }
+  } else {
+    // 水果居民：頭上的果梗與葉子
+    parts.push(
+      part(STEM_GEO, '#5C7A3A', (g) => g.translate(0, 1.0, 0)),
+      part(LEAF_GEO, '#6FA349', (g) => {
+        g.scale(1, 0.42, 1.5);
+        g.translate(0.1, 1.04, 0.03);
+      }),
+    );
   }
 
   const material = new THREE.MeshStandardMaterial({
@@ -164,7 +200,7 @@ export function updateNpc(view: NpcView, t: number, dt: number, visible: boolean
   const pop = view.appear * view.appear * (3 - 2 * view.appear);
   view.root.scale.setScalar(view.baseScale * pop);
 
-  const wantGlow = view.selected ? 0.62 : view.hovered ? 0.4 : 0.05;
+  const wantGlow = view.selected ? 0.3 : view.hovered ? 0.18 : 0.04;
   view.material.emissiveIntensity += (wantGlow - view.material.emissiveIntensity) * Math.min(1, dt * 10);
   view.root.scale.multiplyScalar(1 + (view.hovered || view.selected ? 0.14 : 0));
 }

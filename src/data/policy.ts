@@ -5,7 +5,7 @@ export const POLICY_ID = 'policy';
 
 /**
  * 政策島：群島中央的行政中樞。
- * 島上沒有水果居民，只有北農的員工（一般員工多名，唯一的 BOSS 是總經理）。
+ * 島上沒有水果居民，只有北農的員工（一般員工多名，唯一的 BOSS 是吳總／總經理）。
  * 知識內容以北農實際作業為主，細節後續持續校正。
  */
 export const POLICY_FRUIT: Fruit = {
