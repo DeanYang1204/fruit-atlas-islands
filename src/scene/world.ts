@@ -1,0 +1,538 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { ISLANDS } from '../data/spots';
+import { FRUIT_BY_ID } from '../data/fruits';
+import type { ToggleKey } from '../data/types';
+export type { ToggleKey };
+import { createIsland, updateIsland, type IslandView } from './island';
+import { updateTree, type TreeView } from './tree';
+import { Ocean } from './water';
+import { buildFlows, updateFlows, type FlowView } from './flows';
+import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
+import { setLabelActive, setLabelVisible } from './labels';
+
+export interface WorldCallbacks {
+  onHoverSpot(spotId: string | null): void;
+  onSelectSpot(spotId: string): void;
+  onSelectIsland(fruitId: string): void;
+  onFrame(): void;
+}
+
+interface Flight {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  elapsed: number;
+  duration: number;
+}
+
+const HOME_POS = new THREE.Vector3(2, 60, 72);
+const HOME_TARGET = new THREE.Vector3(2, 0, 4);
+
+const SKY_VERT = /* glsl */ `
+varying vec3 vWorldPosition;
+void main() {
+  vec4 wp = modelMatrix * vec4( position, 1.0 );
+  vWorldPosition = wp.xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+`;
+
+const SKY_FRAG = /* glsl */ `
+uniform vec3 topColor;
+uniform vec3 bottomColor;
+uniform float offset;
+uniform float exponent;
+varying vec3 vWorldPosition;
+void main() {
+  float h = normalize( vWorldPosition + vec3( 0.0, offset, 0.0 ) ).y;
+  float f = pow( max( h, 0.0 ), exponent );
+  gl_FragColor = vec4( mix( bottomColor, topColor, f ), 1.0 );
+  #include <colorspace_fragment>
+}
+`;
+
+function easeInOutCubic(x: number): number {
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+export class World {
+  readonly scene = new THREE.Scene();
+  readonly camera: THREE.PerspectiveCamera;
+  readonly renderer: THREE.WebGLRenderer;
+  readonly labelRenderer: CSS2DRenderer;
+  readonly controls: OrbitControls;
+  readonly islands: IslandView[] = [];
+  readonly islandMap = new Map<string, IslandView>();
+  readonly treeIndex = new Map<string, TreeView>();
+
+  private readonly ocean: Ocean;
+  private readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly ambient: THREE.AmbientLight;
+  private readonly skyMat: THREE.ShaderMaterial;
+  private readonly clouds = new THREE.Group();
+  private readonly clock = new THREE.Clock();
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointer = new THREE.Vector2(-10, -10);
+  private readonly pickables: THREE.Object3D[] = [];
+
+  private flows: FlowView[] = [];
+  private flowGroup = new THREE.Group();
+  private hovered: TreeView | null = null;
+  private hoveredIsland: IslandView | null = null;
+  private selectedTree: TreeView | null = null;
+  private selectedIsland: IslandView | null = null;
+  private flight: Flight | null = null;
+  private time = 0;
+  private frozen = false;
+  private birdOn = false;
+  private pointerInside = false;
+  private downPos = new THREE.Vector2();
+  private rafId = 0;
+
+  private readonly skyNow: SkyState = getBlankState();
+  private readonly skyGoal: SkyState = getBlankState();
+  private readonly sunNow = new THREE.Vector3(0, 40, 20);
+  private readonly sunGoal = new THREE.Vector3(0, 40, 20);
+
+  toggles: Record<ToggleKey, boolean> = {
+    names: true,
+    fruits: true,
+    flows: false,
+    freeze: false,
+    bird: false,
+    log: false,
+  };
+
+  constructor(
+    private readonly container: HTMLElement,
+    private readonly cb: WorldCallbacks,
+  ) {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(w, h);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
+    container.appendChild(this.renderer.domElement);
+
+    this.labelRenderer = new CSS2DRenderer();
+    this.labelRenderer.setSize(w, h);
+    Object.assign(this.labelRenderer.domElement.style, {
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      pointerEvents: 'none',
+    });
+    container.appendChild(this.labelRenderer.domElement);
+
+    this.camera = new THREE.PerspectiveCamera(42, w / h, 0.5, 1200);
+    this.camera.position.copy(HOME_POS);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.target.copy(HOME_TARGET);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.07;
+    this.controls.minDistance = 14;
+    this.controls.maxDistance = 150;
+    this.controls.maxPolarAngle = Math.PI * 0.47;
+    this.controls.minPolarAngle = Math.PI * 0.08;
+    this.controls.rotateSpeed = 0.6;
+    this.controls.zoomSpeed = 0.8;
+    this.controls.addEventListener('start', () => {
+      this.flight = null;
+    });
+
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    this.hemi = new THREE.HemisphereLight(0xbfe6f5, 0x6e8f5a, 0.95);
+    this.sun = new THREE.DirectionalLight(0xfff7e4, 2.2);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 260;
+    this.sun.shadow.camera.left = -48;
+    this.sun.shadow.camera.right = 48;
+    this.sun.shadow.camera.top = 48;
+    this.sun.shadow.camera.bottom = -48;
+    this.sun.shadow.bias = -0.0007;
+    this.sun.shadow.normalBias = 0.03;
+    this.scene.add(this.ambient, this.hemi, this.sun, this.sun.target);
+
+    this.skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new THREE.Color('#7FC6E8') },
+        bottomColor: { value: new THREE.Color('#E1F4FC') },
+        offset: { value: 60 },
+        exponent: { value: 0.62 },
+      },
+      vertexShader: SKY_VERT,
+      fragmentShader: SKY_FRAG,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), this.skyMat);
+    sky.renderOrder = -1000;
+    this.scene.add(sky);
+
+    this.scene.fog = new THREE.Fog(new THREE.Color('#DFF2FB'), 110, 420);
+
+    this.ocean = new Ocean();
+    this.scene.add(this.ocean.mesh);
+
+    for (const island of ISLANDS) {
+      const view = createIsland(island);
+      this.islands.push(view);
+      this.islandMap.set(view.fruitId, view);
+      this.scene.add(view.group);
+      // 島嶼本體可點選（本體 + 草地）
+      const body = view.group.children[0] as THREE.Mesh;
+      this.pickables.push(body, view.grass);
+      for (const [spotId, tree] of view.trees) {
+        this.treeIndex.set(spotId, tree);
+        this.pickables.push(tree.pick);
+      }
+    }
+
+    const built = buildFlows(this.islands);
+    this.flowGroup = built.group;
+    this.flows = built.flows;
+    this.flowGroup.visible = false;
+    this.scene.add(this.flowGroup);
+
+    this.createClouds();
+    this.bindEvents();
+    this.setTime(720);
+    this.applySky(this.skyNow);
+    // 初始只顯示島嶼名牌，知識點名牌等 hover / 選取才出現
+    this.updateLabelVisibility();
+  }
+
+  private createClouds(): void {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      flatShading: true,
+      transparent: true,
+      opacity: 0.86,
+    });
+    for (let i = 0; i < 12; i++) {
+      const cloud = new THREE.Group();
+      const lumps = 3 + (i % 3);
+      for (let j = 0; j < lumps; j++) {
+        const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6 + ((i * j) % 5) * 0.35, 0), mat);
+        lump.position.set((j - lumps / 2) * 3.1, ((i + j) % 3) * 0.5, ((i * 7 + j) % 5) * 0.9);
+        lump.scale.set(1.4, 0.55, 1);
+        cloud.add(lump);
+      }
+      const a = (i / 12) * Math.PI * 2;
+      const r = 40 + ((i * 13) % 40);
+      cloud.position.set(Math.cos(a) * r, 30 + ((i * 5) % 14), Math.sin(a) * r);
+      cloud.userData.speed = 0.25 + ((i % 5) * 0.09);
+      this.clouds.add(cloud);
+    }
+    this.scene.add(this.clouds);
+  }
+
+  private bindEvents(): void {
+    window.addEventListener('resize', this.onResize);
+    const el = this.renderer.domElement;
+    el.addEventListener('pointermove', this.onPointerMove);
+    el.addEventListener('pointerleave', this.onPointerLeave);
+    el.addEventListener('pointerdown', this.onPointerDown);
+    el.addEventListener('pointerup', this.onPointerUp);
+  }
+
+  private onResize = (): void => {
+    const w = this.container.clientWidth || window.innerWidth;
+    const h = this.container.clientHeight || window.innerHeight;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+    this.labelRenderer.setSize(w, h);
+  };
+
+  private onPointerMove = (e: PointerEvent): void => {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.pointerInside = true;
+  };
+
+  private onPointerLeave = (): void => {
+    this.pointerInside = false;
+    this.pointer.set(-10, -10);
+  };
+
+  private onPointerDown = (e: PointerEvent): void => {
+    this.downPos.set(e.clientX, e.clientY);
+  };
+
+  private onPointerUp = (e: PointerEvent): void => {
+    const moved = Math.hypot(e.clientX - this.downPos.x, e.clientY - this.downPos.y);
+    if (moved > 6) return; // 拖曳，不當成點擊
+    const hit = this.pickFirst();
+    if (!hit) return;
+    const tree = hit.object.userData.tree as TreeView | undefined;
+    if (tree) {
+      this.select(tree.data.islandId, tree.data.spotId);
+      this.cb.onSelectSpot(tree.data.spotId);
+      return;
+    }
+    const island = hit.object.userData.island as IslandView | undefined;
+    if (island) {
+      this.select(island.fruitId, null);
+      this.cb.onSelectIsland(island.fruitId);
+    }
+  };
+
+  private pickFirst(): THREE.Intersection | null {
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hits = this.raycaster.intersectObjects(this.pickables, false);
+    return hits.length > 0 ? hits[0] : null;
+  }
+
+  private updateHover(): void {
+    if (!this.pointerInside) {
+      if (this.hovered || this.hoveredIsland) {
+        if (this.hovered) this.hovered.hovered = false;
+        this.hovered = null;
+        this.hoveredIsland = null;
+        this.cb.onHoverSpot(null);
+        this.updateLabelVisibility();
+      }
+      return;
+    }
+
+    const hit = this.pickFirst();
+    const tree = (hit?.object.userData.tree as TreeView | undefined) ?? null;
+    const island = tree
+      ? this.islandMap.get(tree.data.islandId) ?? null
+      : ((hit?.object.userData.island as IslandView | undefined) ?? null);
+
+    if (tree !== this.hovered || island !== this.hoveredIsland) {
+      if (this.hovered) this.hovered.hovered = false;
+      this.hovered = tree;
+      if (tree) tree.hovered = true;
+      this.hoveredIsland = island;
+      this.cb.onHoverSpot(tree ? tree.data.spotId : null);
+      this.updateLabelVisibility();
+      this.renderer.domElement.style.cursor = hit ? 'pointer' : 'default';
+    }
+  }
+
+  private updateLabelVisibility(): void {
+    const showNames = this.toggles.names;
+    const selId = this.selectedIsland?.fruitId ?? null;
+    const hovId = this.hoveredIsland?.fruitId ?? null;
+
+    for (const isl of this.islands) {
+      setLabelVisible(isl.label, showNames);
+      setLabelActive(isl.label, isl.fruitId === selId || isl.fruitId === hovId);
+      for (const tree of isl.trees.values()) {
+        const show = tree.selected || tree.hovered || (showNames && isl.fruitId === selId);
+        setLabelVisible(tree.label, show);
+        setLabelActive(tree.label, tree.selected);
+      }
+    }
+  }
+
+  // ---------- 對外 API ----------
+
+  select(islandId: string | null, spotId: string | null): void {
+    if (this.selectedTree) {
+      this.selectedTree.selected = false;
+      this.selectedTree = null;
+    }
+    const island = islandId ? this.islandMap.get(islandId) ?? null : null;
+    this.selectedIsland = island;
+    if (island && spotId) {
+      const tree = island.trees.get(spotId) ?? null;
+      if (tree) {
+        tree.selected = true;
+        this.selectedTree = tree;
+      }
+    }
+    this.updateLabelVisibility();
+  }
+
+  focusIsland(fruitId: string): void {
+    const island = this.islandMap.get(fruitId);
+    if (!island) return;
+    const target = island.center.clone();
+    const offset = this.birdOn
+      ? new THREE.Vector3(0, 44, 0.01)
+      : new THREE.Vector3(4.2, 15.5, 16.5);
+    this.flyTo(target.clone().add(offset), target, 1.05);
+  }
+
+  focusSpot(spotId: string): void {
+    const tree = this.treeIndex.get(spotId);
+    if (!tree) return;
+    const wp = new THREE.Vector3();
+    tree.group.getWorldPosition(wp);
+    const target = wp.clone().add(new THREE.Vector3(0, 0.9, 0));
+    const offset = this.birdOn
+      ? new THREE.Vector3(0, 22, 0.01)
+      : new THREE.Vector3(2.6, 8.4, 9.2);
+    this.flyTo(target.clone().add(offset), target, 0.95);
+  }
+
+  resetView(): void {
+    const target = HOME_TARGET.clone();
+    const pos = this.birdOn ? new THREE.Vector3(0, 92, 0.01) : HOME_POS.clone();
+    this.flyTo(pos, target, 1.1);
+  }
+
+  setTime(minutes: number): void {
+    sampleSky(minutes, this.skyGoal);
+    sunPosition(minutes, this.sunGoal);
+  }
+
+  setToggle(key: ToggleKey, value: boolean): void {
+    this.toggles[key] = value;
+    if (key === 'freeze') this.frozen = value;
+    if (key === 'flows') this.flowGroup.visible = value;
+    if (key === 'fruits') {
+      for (const tree of this.treeIndex.values()) {
+        for (const f of tree.fruits) f.visible = value;
+      }
+    }
+    if (key === 'bird') {
+      this.birdOn = value;
+      if (this.selectedIsland) this.focusIsland(this.selectedIsland.fruitId);
+      else this.resetView();
+    }
+    if (key === 'names') this.updateLabelVisibility();
+  }
+
+  /** 依「月份」與「科別」條件調整島嶼亮度（當令者會微微發光） */
+  setIslandFilter(month: number | null, families: string[]): void {
+    for (const isl of this.islands) {
+      const monthOk = month === null || hasPeak(isl.fruitId, month);
+      const familyOk = families.length === 0 || families.includes(familyOf(isl.fruitId));
+      isl.inSeason = monthOk && familyOk;
+      setLabelActive(isl.label, isl.inSeason);
+    }
+  }
+
+  get selected(): { islandId: string | null; spotId: string | null } {
+    return {
+      islandId: this.selectedIsland?.fruitId ?? null,
+      spotId: this.selectedTree?.data.spotId ?? null,
+    };
+  }
+
+  start(): void {
+    this.clock.start();
+    const loop = (): void => {
+      this.rafId = requestAnimationFrame(loop);
+      this.step();
+    };
+    this.rafId = requestAnimationFrame(loop);
+  }
+
+  stop(): void {
+    cancelAnimationFrame(this.rafId);
+  }
+
+  // ---------- 主迴圈 ----------
+
+  private step(): void {
+    const dt = Math.min(this.clock.getDelta(), 0.05);
+    if (!this.frozen) this.time += dt;
+    const t = this.time;
+
+    this.ocean.update(t);
+
+    for (const isl of this.islands) {
+      updateIsland(isl, t, dt);
+      for (const tree of isl.trees.values()) updateTree(tree, t, dt);
+    }
+
+    if (this.flowGroup.visible) updateFlows(this.flows, t, this.islandMap);
+
+    for (const cloud of this.clouds.children) {
+      if (!this.frozen) cloud.position.x += (cloud.userData.speed as number) * dt;
+      if (cloud.position.x > 120) cloud.position.x = -120;
+    }
+
+    const k = Math.min(1, dt * 5);
+    lerpSky(this.skyNow, this.skyGoal, k);
+    this.sunNow.lerp(this.sunGoal, k);
+    this.applySky(this.skyNow);
+
+    if (this.flight) {
+      const f = this.flight;
+      f.elapsed += dt;
+      const p = easeInOutCubic(Math.min(1, f.elapsed / f.duration));
+      this.camera.position.lerpVectors(f.fromPos, f.toPos, p);
+      this.controls.target.lerpVectors(f.fromTarget, f.toTarget, p);
+      if (p >= 1) this.flight = null;
+    }
+
+    this.updateHover();
+    this.controls.update();
+
+    this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
+    this.cb.onFrame();
+  }
+
+  private flyTo(toPos: THREE.Vector3, toTarget: THREE.Vector3, duration: number): void {
+    this.flight = {
+      fromPos: this.camera.position.clone(),
+      toPos,
+      fromTarget: this.controls.target.clone(),
+      toTarget,
+      elapsed: 0,
+      duration,
+    };
+  }
+
+  private applySky(s: SkyState): void {
+    (this.skyMat.uniforms.topColor.value as THREE.Color).copy(s.skyTop);
+    (this.skyMat.uniforms.bottomColor.value as THREE.Color).copy(s.skyBottom);
+    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(s.fog);
+    this.sun.color.copy(s.sunColor);
+    this.sun.intensity = s.sunIntensity;
+    this.hemi.color.copy(s.hemiSky);
+    this.hemi.groundColor.copy(s.hemiGround);
+    this.hemi.intensity = s.hemiIntensity;
+    this.ambient.color.copy(s.ambientColor);
+    this.ambient.intensity = s.ambientIntensity;
+    this.ocean.setColor(s.waterColor);
+    this.sun.position.copy(this.sunNow);
+  }
+}
+
+function hasPeak(fruitId: string, month: number): boolean {
+  return FRUIT_BY_ID[fruitId]?.peak.includes(month) ?? false;
+}
+
+function familyOf(fruitId: string): string {
+  return FRUIT_BY_ID[fruitId]?.family ?? '';
+}
+
+function lerpSky(now: SkyState, goal: SkyState, k: number): void {
+  now.skyTop.lerp(goal.skyTop, k);
+  now.skyBottom.lerp(goal.skyBottom, k);
+  now.fog.lerp(goal.fog, k);
+  now.sunColor.lerp(goal.sunColor, k);
+  now.hemiSky.lerp(goal.hemiSky, k);
+  now.hemiGround.lerp(goal.hemiGround, k);
+  now.ambientColor.lerp(goal.ambientColor, k);
+  now.waterColor.lerp(goal.waterColor, k);
+  now.sunIntensity += (goal.sunIntensity - now.sunIntensity) * k;
+  now.hemiIntensity += (goal.hemiIntensity - now.hemiIntensity) * k;
+  now.ambientIntensity += (goal.ambientIntensity - now.ambientIntensity) * k;
+  now.note = goal.note;
+}
