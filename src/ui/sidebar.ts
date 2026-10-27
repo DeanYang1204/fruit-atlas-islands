@@ -1,12 +1,23 @@
-import { FRUIT_BY_ID } from '../data/fruits';
-import { ISLANDS, MONTHS, SPOT_BY_ID, SPOTS, type Island } from '../data/spots';
-import type { Spot } from '../data/types';
+import {
+  ALL_ISLANDS,
+  ALL_SPOTS,
+  ALL_SPOT_BY_ID,
+  ISLANDS,
+  ISLAND_FRUIT_BY_ID,
+  MONTHS,
+  POLICY_ID,
+  islandName,
+} from '../data/atlas';
+import { RESIDENTS, RESIDENTS_BY_ISLAND } from '../data/residents';
+import type { Island } from '../data/spots';
+import type { Resident, Spot } from '../data/types';
 import { store, type AppState } from '../state';
 import { clear, el, must } from './dom';
 
 const TAB_IDS = {
   islands: '#tab-islands',
   spots: '#tab-spots',
+  residents: '#tab-residents',
   season: '#tab-season',
 } as const;
 
@@ -44,24 +55,34 @@ export function initSidebar(): void {
     if (!action || !id) return;
 
     if (action === 'island') {
-      store.set({ islandId: id, spotId: null, cardOpen: true });
-      store.pushLog({ islandId: id, spotId: null, text: `抵達「${FRUIT_BY_ID[id]?.name ?? id}」島` });
+      store.set({ islandId: id, spotId: null, residentId: null, cardOpen: true });
+      store.pushLog({ islandId: id, spotId: null, text: `抵達「${islandName(id)}」島` });
       return;
     }
 
-    const spot = SPOT_BY_ID[id];
+    if (action === 'resident') {
+      const resident = RESIDENTS.find((r) => r.id === id);
+      if (!resident) return;
+      store.set({ islandId: resident.islandId, spotId: null, residentId: id, cardOpen: true });
+      store.markMet(id);
+      store.pushLog({ islandId: resident.islandId, spotId: null, text: `遇見 ${resident.name}` });
+      return;
+    }
+
+    const spot = ALL_SPOT_BY_ID[id];
     if (!spot) return;
-    const fruit = FRUIT_BY_ID[spot.fruitId];
-    store.set({ islandId: spot.fruitId, spotId: id, cardOpen: true });
+    store.set({ islandId: spot.fruitId, spotId: id, residentId: null, cardOpen: true });
     store.markVisited(id);
     store.pushLog({
       islandId: spot.fruitId,
       spotId: id,
-      text: `${fruit?.name ?? spot.fruitId}｜${spot.title}`,
+      text: `${islandName(spot.fruitId)}｜${spot.title}`,
     });
   });
 
-  store.on(['tab', 'query', 'islandId', 'spotId', 'visited', 'month', 'families'], (s) => render(s, host));
+  store.on(['tab', 'query', 'islandId', 'spotId', 'residentId', 'visited', 'met', 'month', 'families'], (s) =>
+    render(s, host),
+  );
   render(store.state, host);
 }
 
@@ -73,15 +94,63 @@ function render(s: AppState, host: HTMLElement): void {
   clear(host);
   const q = s.query.toLowerCase();
   const visited = new Set(s.visited);
+  const met = new Set(s.met);
 
   if (s.tab === 'islands') renderIslands(host, q, s, visited);
   else if (s.tab === 'spots') renderSpots(host, q, visited);
+  else if (s.tab === 'residents') renderResidents(host, q, s, met);
   else renderSeason(host, q, visited);
 }
 
+/** 居民頁籤：政策島的北農員工在前，其後是各水果島的品種化身 */
+function renderResidents(host: HTMLElement, q: string, s: AppState, met: Set<string>): void {
+  const order = [POLICY_ID, ...ISLANDS.map((i) => i.fruit.id)];
+  let found = 0;
+
+  for (const islandId of order) {
+    const people = RESIDENTS_BY_ISLAND[islandId];
+    if (!people || people.length === 0) continue;
+    const visible = people.filter((r) => !q || residentHaystack(r).includes(q));
+    if (visible.length === 0) continue;
+    found += visible.length;
+
+    const done = people.filter((r) => met.has(r.id)).length;
+    const head = el('div', 'res-head');
+    head.append(
+      el('b', undefined, islandId === POLICY_ID ? '政策島・北農員工' : `${islandName(islandId)}島`),
+      el('span', undefined, `${done}/${people.length}`),
+    );
+    host.append(head);
+
+    const row = el('div', 'res-row');
+    for (const r of visible) {
+      const btn = el('button', 'person' + (r.boss ? ' is-boss' : ''));
+      btn.dataset.action = 'resident';
+      btn.dataset.id = r.id;
+      btn.style.setProperty('--c', r.color);
+      if (met.has(r.id)) btn.classList.add('is-met');
+      if (s.residentId === r.id) btn.classList.add('is-active');
+      btn.append(
+        el('em', undefined, r.boss ? '★' : '●'),
+        el('span', undefined, r.name),
+        el('i', undefined, met.has(r.id) ? '✓' : r.short),
+      );
+      row.append(btn);
+    }
+    host.append(row);
+  }
+
+  if (found === 0) host.append(emptyState('沒有符合的居民，換個關鍵字試試'));
+}
+
+function residentHaystack(r: Resident): string {
+  return [r.name, r.short, r.role, r.lead, ...r.points, ...r.keywords].join(' ').toLowerCase();
+}
+
+/** 水果島清單（含政策島在最前） */
 function renderIslands(host: HTMLElement, q: string, s: AppState, visited: Set<string>): void {
   let found = 0;
-  for (const island of ISLANDS) {
+  for (const island of ALL_ISLANDS) {
     const hay = islandHaystack(island) + ' ' + island.spots.map((sp) => sp.title).join(' ');
     if (q && !hay.includes(q)) continue;
     found++;
@@ -124,7 +193,7 @@ function renderIslands(host: HTMLElement, q: string, s: AppState, visited: Set<s
 
 function renderSpots(host: HTMLElement, q: string, visited: Set<string>): void {
   let found = 0;
-  for (const spot of SPOTS) {
+  for (const spot of ALL_SPOTS) {
     if (q && !spotHaystack(spot).includes(q)) continue;
     found++;
     host.append(spotButton(spot, visited));
@@ -165,8 +234,7 @@ function spotButton(spot: Spot, visited: Set<string>): HTMLElement {
   btn.dataset.id = spot.id;
   const done = visited.has(spot.id);
   if (done) btn.classList.add('is-done');
-  const fruit = FRUIT_BY_ID[spot.fruitId];
-  btn.style.setProperty('--c', spot.kind === 'market' ? '#2F6690' : fruit?.color ?? '#E8871A');
+  btn.style.setProperty('--c', spot.kind === 'market' ? '#2F6690' : spot.kind === 'org' ? '#3D5A80' : spot.kind === 'rule' ? '#B4472E' : ISLAND_FRUIT_BY_ID[spot.fruitId]?.color ?? '#E8871A');
   btn.append(el('em', undefined, spot.mark ?? '•'), el('span', undefined, spot.title));
   if (done) btn.append(el('span', 'ok', '✓'));
   return btn;

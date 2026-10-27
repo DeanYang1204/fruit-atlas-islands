@@ -12,6 +12,8 @@ export const SPOT_META: Record<SpotKind, { label: string; mark: string; color: s
   nutrition: { label: '營養密碼', mark: '養', color: '#3E8E8A' },
   trivia: { label: '冷知識', mark: '趣', color: '#8A5CA8' },
   market: { label: '北農檔案', mark: '市', color: '#2F6690' },
+  org: { label: '組織分工', mark: '織', color: '#3D5A80' },
+  rule: { label: '拍賣制度', mark: '拍', color: '#B4472E' },
 };
 
 /** 由水果資料自動生成知識點，避免重複維護 */

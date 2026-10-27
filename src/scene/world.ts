@@ -1,12 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { ISLANDS } from '../data/spots';
+import { ALL_ISLANDS } from '../data/atlas';
 import { FRUIT_BY_ID } from '../data/fruits';
 import type { ToggleKey } from '../data/types';
 export type { ToggleKey };
-import { createIsland, updateIsland, type IslandView } from './island';
+import {
+  createIsland,
+  updateIsland,
+  updateIslandNpcLabels,
+  type IslandView,
+} from './island';
 import { updateTree, type TreeView } from './tree';
+import type { NpcView } from './npc';
 import { Ocean } from './water';
 import { buildFlows, updateFlows, type FlowView } from './flows';
 import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
@@ -16,6 +22,8 @@ export interface WorldCallbacks {
   onHoverSpot(spotId: string | null): void;
   onSelectSpot(spotId: string): void;
   onSelectIsland(fruitId: string): void;
+  onHoverResident(residentId: string | null): void;
+  onSelectResident(residentId: string): void;
   onFrame(): void;
 }
 
@@ -30,6 +38,9 @@ interface Flight {
 
 const HOME_POS = new THREE.Vector3(2, 60, 72);
 const HOME_TARGET = new THREE.Vector3(2, 0, 4);
+
+/** 鏡頭離島中心多近才讓居民開始走動 */
+const NPC_ACTIVE_DISTANCE = 46;
 
 const SKY_VERT = /* glsl */ `
 varying vec3 vWorldPosition;
@@ -67,6 +78,7 @@ export class World {
   readonly islands: IslandView[] = [];
   readonly islandMap = new Map<string, IslandView>();
   readonly treeIndex = new Map<string, TreeView>();
+  readonly npcIndex = new Map<string, NpcView>();
 
   private readonly ocean: Ocean;
   private readonly sun: THREE.DirectionalLight;
@@ -82,8 +94,10 @@ export class World {
   private flows: FlowView[] = [];
   private flowGroup = new THREE.Group();
   private hovered: TreeView | null = null;
+  private hoveredNpc: NpcView | null = null;
   private hoveredIsland: IslandView | null = null;
   private selectedTree: TreeView | null = null;
+  private selectedNpc: NpcView | null = null;
   private selectedIsland: IslandView | null = null;
   private flight: Flight | null = null;
   private time = 0;
@@ -101,6 +115,7 @@ export class World {
   toggles: Record<ToggleKey, boolean> = {
     names: true,
     fruits: true,
+    people: true,
     flows: false,
     freeze: false,
     bird: false,
@@ -186,7 +201,7 @@ export class World {
     this.ocean = new Ocean();
     this.scene.add(this.ocean.mesh);
 
-    for (const island of ISLANDS) {
+    for (const island of ALL_ISLANDS) {
       const view = createIsland(island);
       this.islands.push(view);
       this.islandMap.set(view.fruitId, view);
@@ -197,6 +212,10 @@ export class World {
       for (const [spotId, tree] of view.trees) {
         this.treeIndex.set(spotId, tree);
         this.pickables.push(tree.pick);
+      }
+      for (const [residentId, npc] of view.npcs) {
+        this.npcIndex.set(residentId, npc);
+        this.pickables.push(npc.body, npc.shadow);
       }
     }
 
@@ -281,6 +300,14 @@ export class World {
     if (moved > 6) return; // 拖曳，不當成點擊
     const hit = this.pickFirst();
     if (!hit) return;
+
+    const npc = hit.object.userData.npc as NpcView | undefined;
+    if (npc) {
+      this.selectResident(npc.data.residentId);
+      this.cb.onSelectResident(npc.data.residentId);
+      return;
+    }
+
     const tree = hit.object.userData.tree as TreeView | undefined;
     if (tree) {
       this.select(tree.data.islandId, tree.data.spotId);
@@ -297,16 +324,22 @@ export class World {
   private pickFirst(): THREE.Intersection | null {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits = this.raycaster.intersectObjects(this.pickables, false);
-    return hits.length > 0 ? hits[0] : null;
+    for (const hit of hits) {
+      if (isRenderable(hit.object)) return hit;
+    }
+    return null;
   }
 
   private updateHover(): void {
     if (!this.pointerInside) {
-      if (this.hovered || this.hoveredIsland) {
+      if (this.hovered || this.hoveredNpc || this.hoveredIsland) {
         if (this.hovered) this.hovered.hovered = false;
+        if (this.hoveredNpc) this.hoveredNpc.hovered = false;
         this.hovered = null;
+        this.hoveredNpc = null;
         this.hoveredIsland = null;
         this.cb.onHoverSpot(null);
+        this.cb.onHoverResident(null);
         this.updateLabelVisibility();
       }
       return;
@@ -314,9 +347,19 @@ export class World {
 
     const hit = this.pickFirst();
     const tree = (hit?.object.userData.tree as TreeView | undefined) ?? null;
-    const island = tree
-      ? this.islandMap.get(tree.data.islandId) ?? null
-      : ((hit?.object.userData.island as IslandView | undefined) ?? null);
+    const npc = (hit?.object.userData.npc as NpcView | undefined) ?? null;
+    const island = npc
+      ? this.islandMap.get(npc.data.islandId) ?? null
+      : tree
+        ? this.islandMap.get(tree.data.islandId) ?? null
+        : ((hit?.object.userData.island as IslandView | undefined) ?? null);
+
+    if (npc !== this.hoveredNpc) {
+      if (this.hoveredNpc) this.hoveredNpc.hovered = false;
+      this.hoveredNpc = npc;
+      if (npc) npc.hovered = true;
+      this.cb.onHoverResident(npc ? npc.data.residentId : null);
+    }
 
     if (tree !== this.hovered || island !== this.hoveredIsland) {
       if (this.hovered) this.hovered.hovered = false;
@@ -342,15 +385,23 @@ export class World {
         setLabelVisible(tree.label, show);
         setLabelActive(tree.label, tree.selected);
       }
+      updateIslandNpcLabels(
+        isl,
+        this.toggles.people && showNames && isl === this.selectedIsland,
+      );
     }
   }
 
   // ---------- 對外 API ----------
 
-  select(islandId: string | null, spotId: string | null): void {
+  select(islandId: string | null, spotId: string | null, residentId: string | null = null): void {
     if (this.selectedTree) {
       this.selectedTree.selected = false;
       this.selectedTree = null;
+    }
+    if (this.selectedNpc) {
+      this.selectedNpc.selected = false;
+      this.selectedNpc = null;
     }
     const island = islandId ? this.islandMap.get(islandId) ?? null : null;
     this.selectedIsland = island;
@@ -361,7 +412,20 @@ export class World {
         this.selectedTree = tree;
       }
     }
+    if (residentId) {
+      const npc = this.npcIndex.get(residentId) ?? null;
+      if (npc) {
+        npc.selected = true;
+        this.selectedNpc = npc;
+      }
+    }
     this.updateLabelVisibility();
+  }
+
+  private selectResident(residentId: string): void {
+    const npc = this.npcIndex.get(residentId);
+    if (!npc) return;
+    this.select(npc.data.islandId, null, residentId);
   }
 
   focusIsland(fruitId: string): void {
@@ -386,6 +450,23 @@ export class World {
     this.flyTo(target.clone().add(offset), target, 0.95);
   }
 
+  /** 飛到某位居民面前（居民會一直走，所以先算出他當下的位置） */
+  focusResident(residentId: string): void {
+    const npc = this.npcIndex.get(residentId);
+    if (!npc) {
+      this.focusIsland(residentId.split(':')[0]);
+      return;
+    }
+    npc.root.updateWorldMatrix(true, false);
+    const wp = new THREE.Vector3();
+    npc.root.getWorldPosition(wp);
+    const target = wp.clone().add(new THREE.Vector3(0, 0.6, 0));
+    const offset = this.birdOn
+      ? new THREE.Vector3(0, 16, 0.01)
+      : new THREE.Vector3(1.6, 2.6, 3.2);
+    this.flyTo(target.clone().add(offset), target, 0.85);
+  }
+
   resetView(): void {
     const target = HOME_TARGET.clone();
     const pos = this.birdOn ? new THREE.Vector3(0, 92, 0.01) : HOME_POS.clone();
@@ -401,6 +482,10 @@ export class World {
     this.toggles[key] = value;
     if (key === 'freeze') this.frozen = value;
     if (key === 'flows') this.flowGroup.visible = value;
+    if (key === 'people') {
+      for (const isl of this.islands) isl.npcRoot.visible = value;
+      this.updateLabelVisibility();
+    }
     if (key === 'fruits') {
       for (const tree of this.treeIndex.values()) {
         for (const f of tree.fruits) f.visible = value;
@@ -414,9 +499,14 @@ export class World {
     if (key === 'names') this.updateLabelVisibility();
   }
 
-  /** 依「月份」與「科別」條件調整島嶼亮度（當令者會微微發光） */
+  /** 依「月份」與「科別」條件調整島嶼亮度（當令者會微微發光）；政策島不參與水果篩選 */
   setIslandFilter(month: number | null, families: string[]): void {
     for (const isl of this.islands) {
+      if (isl.policy) {
+        isl.inSeason = true;
+        setLabelActive(isl.label, true);
+        continue;
+      }
       const monthOk = month === null || hasPeak(isl.fruitId, month);
       const familyOk = families.length === 0 || families.includes(familyOf(isl.fruitId));
       isl.inSeason = monthOk && familyOk;
@@ -424,10 +514,11 @@ export class World {
     }
   }
 
-  get selected(): { islandId: string | null; spotId: string | null } {
+  get selected(): { islandId: string | null; spotId: string | null; residentId: string | null } {
     return {
       islandId: this.selectedIsland?.fruitId ?? null,
       spotId: this.selectedTree?.data.spotId ?? null,
+      residentId: this.selectedNpc?.data.residentId ?? null,
     };
   }
 
@@ -453,7 +544,12 @@ export class World {
 
     this.ocean.update(t);
 
+    const peopleOn = this.toggles.people;
     for (const isl of this.islands) {
+      // 居民只在靠近時活動，省效能也避免遠處一堆小人在飄
+      const dist = this.camera.position.distanceTo(isl.center);
+      isl.npcActive = peopleOn && dist < NPC_ACTIVE_DISTANCE;
+      isl.npcRoot.visible = peopleOn;
       updateIsland(isl, t, dt);
       for (const tree of isl.trees.values()) updateTree(tree, t, dt);
     }
@@ -520,6 +616,15 @@ function hasPeak(fruitId: string, month: number): boolean {
 
 function familyOf(fruitId: string): string {
   return FRUIT_BY_ID[fruitId]?.family ?? '';
+}
+
+function isRenderable(obj: THREE.Object3D): boolean {
+  let cur: THREE.Object3D | null = obj;
+  while (cur) {
+    if (!cur.visible) return false;
+    cur = cur.parent;
+  }
+  return true;
 }
 
 function lerpSky(now: SkyState, goal: SkyState, k: number): void {

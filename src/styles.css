@@ -176,7 +176,8 @@ button {
 .toolbar {
   position: absolute;
   top: 16px;
-  right: 16px;
+  /* 避開右側的詳細資料卡 */
+  right: calc(var(--card-w) + 28px);
   z-index: 12;
   display: flex;
   gap: 6px;
@@ -1339,6 +1340,162 @@ button {
 .lbl-spot.is-active {
   box-shadow: 0 6px 18px rgba(232, 135, 26, 0.36);
   transform: scale(1.05);
+}
+
+/* ---------- 島上居民 ---------- */
+
+.lbl-resident {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 3px 9px 4px;
+  border-radius: 10px;
+  background: rgba(255, 248, 239, 0.94);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-s);
+  white-space: nowrap;
+}
+
+.lbl-resident em {
+  width: 6px;
+  height: 6px;
+  margin-bottom: 2px;
+  border-radius: 50%;
+  background: var(--c, var(--ginger));
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  overflow: hidden;
+}
+
+.lbl-resident b {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--earth-d);
+  line-height: 1.25;
+}
+
+.lbl-resident i {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--mute);
+  line-height: 1.2;
+}
+
+.lbl-resident.is-boss {
+  border-color: #d8a93a;
+  box-shadow: 0 4px 14px rgba(216, 169, 58, 0.36);
+}
+
+.lbl-resident.is-boss b {
+  color: #8a6216;
+}
+
+/* 知識卡裡的居民名單 */
+
+.people-head,
+.res-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 14px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.people-head b,
+.res-head b {
+  font-size: 13px;
+  color: var(--earth);
+}
+
+.people-head span,
+.res-head span {
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.res-head {
+  margin-top: 16px;
+}
+
+.res-row,
+.people-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--earth-d);
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.person em {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c, var(--ginger));
+}
+
+.person i {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--mute);
+}
+
+.person:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-s);
+  background: #fff;
+}
+
+.person.is-met {
+  border-color: rgba(76, 140, 74, 0.4);
+  background: rgba(76, 140, 74, 0.09);
+}
+
+.person.is-met i {
+  color: #4c8c4a;
+  font-weight: 800;
+}
+
+.person.is-boss {
+  border-color: #d8a93a;
+  background: rgba(216, 169, 58, 0.14);
+  color: #8a6216;
+}
+
+.person.is-active {
+  box-shadow: 0 0 0 2px rgba(232, 135, 26, 0.5);
+}
+
+.card-tip {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--mute);
+  background: rgba(232, 135, 26, 0.08);
+  border-left: 3px solid var(--ginger);
+  padding: 7px 10px;
+  border-radius: 0 8px 8px 0;
+}
+
+.dock-item.is-policy {
+  border-color: rgba(47, 102, 144, 0.45);
+  background: rgba(47, 102, 144, 0.1);
 }
 
 /* ---------- 引導 ---------- */

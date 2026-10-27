@@ -1,6 +1,6 @@
-import { FRUIT_BY_ID } from '../data/fruits';
-import { ISLAND_BY_FRUIT, MONTHS, SPOT_BY_ID } from '../data/spots';
-import type { Fruit, Spot } from '../data/types';
+import { ALL_ISLAND_BY_ID, ALL_SPOT_BY_ID, ISLAND_FRUIT_BY_ID, islandName, MONTHS } from '../data/atlas';
+import { RESIDENT_BY_ID, RESIDENTS_BY_ISLAND } from '../data/residents';
+import type { Fruit, Resident, Spot } from '../data/types';
 import { store, type AppState } from '../state';
 import { clear, el, must } from './dom';
 
@@ -9,7 +9,7 @@ export function initCard(): void {
   const content = must<HTMLDivElement>('#card-content');
 
   must<HTMLButtonElement>('#card-close').addEventListener('click', () => {
-    store.set({ cardOpen: false, spotId: null });
+    store.set({ cardOpen: false, spotId: null, residentId: null });
   });
 
   must<HTMLButtonElement>('#card-handle').addEventListener('click', () => {
@@ -21,9 +21,9 @@ export function initCard(): void {
     const act = btn?.dataset.act;
     if (!act) return;
 
-    const { islandId, spotId } = store.state;
+    const { islandId, spotId, residentId } = store.state;
     if (!islandId) return;
-    const island = ISLAND_BY_FRUIT[islandId];
+    const island = ALL_ISLAND_BY_ID[islandId];
     if (!island) return;
     const idx = spotId ? island.spots.findIndex((s) => s.id === spotId) : -1;
 
@@ -32,40 +32,100 @@ export function initCard(): void {
     else if (act === 'first') goSpot(island.spots[0]);
     else if (act === 'random') goSpot(island.spots[Math.floor(Math.random() * island.spots.length)]);
     else if (act === 'done' && spotId) store.markVisited(spotId);
+    else if (act === 'met' && residentId) store.markMet(residentId);
+    else if (act === 'home-island') store.set({ spotId: null, residentId: null, cardOpen: true });
+    else if (act === 'resident' && btn?.dataset.id) goResident(btn.dataset.id);
   });
 
-  store.on(['islandId', 'spotId', 'visited', 'cardOpen'], (s) => render(card, content, s));
+  store.on(['islandId', 'spotId', 'residentId', 'visited', 'met', 'cardOpen'], (s) =>
+    render(card, content, s),
+  );
   render(card, content, store.state);
 }
 
+function goResident(residentId: string): void {
+  const resident = RESIDENT_BY_ID[residentId];
+  if (!resident) return;
+  store.set({ islandId: resident.islandId, spotId: null, residentId, cardOpen: true });
+  store.markMet(residentId);
+  store.pushLog({
+    islandId: resident.islandId,
+    spotId: null,
+    text: `${islandName(resident.islandId)}｜遇見 ${resident.name}`,
+  });
+}
+
 function goSpot(spot: Spot): void {
-  store.set({ islandId: spot.fruitId, spotId: spot.id, cardOpen: true });
+  store.set({ islandId: spot.fruitId, spotId: spot.id, residentId: null, cardOpen: true });
   store.markVisited(spot.id);
-  const fruit = FRUIT_BY_ID[spot.fruitId];
   store.pushLog({
     islandId: spot.fruitId,
     spotId: spot.id,
-    text: `${fruit?.name ?? spot.fruitId}｜${spot.title}`,
+    text: `${islandName(spot.fruitId)}｜${spot.title}`,
   });
 }
 
 function render(card: HTMLElement, content: HTMLElement, s: AppState): void {
-  const open = s.cardOpen && (!!s.islandId || !!s.spotId);
+  const open = s.cardOpen && (!!s.islandId || !!s.spotId || !!s.residentId);
   card.hidden = !open;
   if (!open) return;
 
   clear(content);
-  const spot = s.spotId ? SPOT_BY_ID[s.spotId] : undefined;
-  const fruit = s.islandId ? FRUIT_BY_ID[s.islandId] : undefined;
+  const resident = s.residentId ? RESIDENT_BY_ID[s.residentId] : undefined;
+  const spot = s.spotId ? ALL_SPOT_BY_ID[s.spotId] : undefined;
+  const fruit = s.islandId ? ISLAND_FRUIT_BY_ID[s.islandId] : undefined;
 
-  if (spot && fruit) renderSpot(content, spot, fruit, s);
+  if (resident && fruit) renderResident(content, resident, fruit, s);
+  else if (spot && fruit) renderSpot(content, spot, fruit, s);
   else if (fruit) renderIsland(content, fruit, s);
 
   card.scrollTop = 0;
 }
 
+/** 島上居民（水果品種化身／北農員工）的詳細資料 */
+function renderResident(content: HTMLElement, r: Resident, islandFruit: Fruit, s: AppState): void {
+  const head = el('div', 'card-head');
+  head.style.setProperty('--c', r.color);
+  const kind = el('span', 'kind', r.boss ? 'BOSS' : r.kind === 'staff' ? '北農員工' : '水果居民');
+  const homeLabel = islandFruit.name.endsWith('島') ? islandFruit.name : `${islandFruit.name}島`;
+  head.append(
+    kind,
+    el('h2', undefined, r.name),
+    el('p', 'sub', `${r.role}｜住在${homeLabel}`),
+    el('p', 'lead', r.lead),
+  );
+  content.append(head);
+
+  const ul = el('ul', 'pts');
+  for (const p of r.points) {
+    const li = el('li');
+    li.textContent = p;
+    ul.append(li);
+  }
+  content.append(ul);
+
+  if (r.kind === 'variety') {
+    const tip = el('p', 'card-tip', '提示｜同一座島上的居民是不同的品種，聊過一位就認識一個品種。');
+    content.append(tip);
+  }
+
+  const actions = el('div', 'card-actions');
+  const met = s.met.includes(r.id);
+  const metBtn = el('button', 'btn ghost', met ? '✓ 已認識' : '打過招呼');
+  metBtn.dataset.act = 'met';
+  metBtn.disabled = met;
+  const home = el('button', 'btn', `看${islandFruit.name}島`);
+  home.dataset.act = 'home-island';
+  actions.append(metBtn, home);
+  content.append(actions);
+
+  const nav = el('div', 'card-nav');
+  nav.textContent = `已認識 ${s.met.length} 位居民`;
+  content.append(nav);
+}
+
 function renderSpot(content: HTMLElement, spot: Spot, fruit: Fruit, s: AppState): void {
-  const island = ISLAND_BY_FRUIT[fruit.id];
+  const island = ALL_ISLAND_BY_ID[fruit.id];
   const idx = island ? island.spots.findIndex((x) => x.id === spot.id) : 0;
   const total = island ? island.spots.length : 0;
   const done = s.visited.includes(spot.id);
@@ -109,11 +169,14 @@ function renderSpot(content: HTMLElement, spot: Spot, fruit: Fruit, s: AppState)
 }
 
 function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
-  const island = ISLAND_BY_FRUIT[fruit.id];
+  const island = ALL_ISLAND_BY_ID[fruit.id];
+  const people = island ? RESIDENTS_BY_ISLAND[fruit.id] ?? [] : [];
+  const isPolicy = fruit.id === 'policy';
+
   const head = el('div', 'card-head');
   head.style.setProperty('--c', fruit.color);
   head.append(
-    el('span', 'kind', '水果島'),
+    el('span', 'kind', isPolicy ? '行政中樞' : '水果島'),
     el('h2', undefined, fruit.name),
     el('p', 'sub', `${fruit.en}・${fruit.sci}`),
     el('p', 'lead', fruit.tagline),
@@ -124,10 +187,10 @@ function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
 
   const dl = el('dl', 'facts');
   addFact(dl, '別名', fruit.alias);
-  addFact(dl, '科別', fruit.family);
-  addFact(dl, '產季', fruit.harvestNote);
-  addFact(dl, '主要產地', fruit.regions.map((r) => r.name).join('、'));
-  addFact(dl, '代表品種', fruit.varieties.map((v) => v.name).join('、'));
+  addFact(dl, isPolicy ? '所屬體系' : '科別', fruit.family);
+  addFact(dl, isPolicy ? '作業時間' : '產季', fruit.harvestNote);
+  addFact(dl, isPolicy ? '主要場區' : '主要產地', fruit.regions.map((r) => r.name).join('、'));
+  if (!isPolicy) addFact(dl, '代表品種', fruit.varieties.map((v) => v.name).join('、'));
   content.append(dl);
 
   const actions = el('div', 'card-actions');
@@ -138,9 +201,36 @@ function renderIsland(content: HTMLElement, fruit: Fruit, s: AppState): void {
   actions.append(first, rand);
   content.append(actions);
 
+  // 島上居民一覽，點名字就能飛到他面前
+  if (people.length > 0) {
+    const peopleHead = el('div', 'people-head');
+    peopleHead.append(el('b', undefined, isPolicy ? '島上的北農員工' : '島上的水果居民'));
+    peopleHead.append(el('span', undefined, `${people.length} 位`));
+    content.append(peopleHead);
+
+    const list = el('div', 'people-list');
+    for (const r of people) {
+      const btn = el('button', 'person' + (r.boss ? ' is-boss' : ''));
+      btn.dataset.act = 'resident';
+      btn.dataset.id = r.id;
+      btn.style.setProperty('--c', r.color);
+      const met = s.met.includes(r.id);
+      if (met) btn.classList.add('is-met');
+      btn.append(
+        el('em', undefined, r.boss ? '★' : '●'),
+        el('span', undefined, r.name),
+        el('i', undefined, met ? '✓' : r.short),
+      );
+      list.append(btn);
+    }
+    content.append(list);
+  }
+
   const done = island ? island.spots.filter((sp) => s.visited.includes(sp.id)).length : 0;
   const nav = el('div', 'card-nav');
-  nav.textContent = `已學 ${done} / ${island?.spots.length ?? 0} 個知識點`;
+  nav.textContent = `已學 ${done} / ${island?.spots.length ?? 0} 個知識點　・　已認識 ${
+    people.filter((r) => s.met.includes(r.id)).length
+  } / ${people.length} 位居民`;
   content.append(nav);
 }
 
@@ -178,6 +268,8 @@ function kindLabel(spot: Spot): string {
     nutrition: '營養密碼',
     trivia: '冷知識',
     market: '北農檔案',
+    org: '組織分工',
+    rule: '拍賣制度',
   };
   return map[spot.kind] ?? '知識點';
 }

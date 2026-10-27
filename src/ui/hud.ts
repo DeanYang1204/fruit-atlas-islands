@@ -73,7 +73,7 @@ export function initHud(world: World): void {
 
   // ---- 工具列 ----
   must<HTMLButtonElement>('#home').addEventListener('click', () => {
-    store.set({ islandId: null, spotId: null, cardOpen: false });
+    store.set({ islandId: null, spotId: null, residentId: null, cardOpen: false });
     world.resetView();
   });
 

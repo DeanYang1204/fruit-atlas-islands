@@ -1,5 +1,5 @@
-import { FRUIT_BY_ID } from '../data/fruits';
-import { ISLANDS, SPOT_BY_ID } from '../data/spots';
+import { ALL_ISLANDS, ALL_SPOT_BY_ID, ISLAND_FRUIT_BY_ID } from '../data/atlas';
+import { TOTAL_RESIDENTS } from '../data/residents';
 import { store, type AppState } from '../state';
 import { clear, el, must } from './dom';
 
@@ -41,20 +41,22 @@ export function initLog(): void {
 function renderOverview(host: HTMLElement, s: AppState): void {
   clear(host);
   const visited = new Set(s.visited);
+  const met = new Set(s.met);
 
-  const totalSpots = ISLANDS.reduce((n, i) => n + i.spots.length, 0);
-  const doneIslands = ISLANDS.filter((i) => i.spots.every((sp) => visited.has(sp.id))).length;
+  const totalSpots = ALL_ISLANDS.reduce((n, i) => n + i.spots.length, 0);
+  const doneIslands = ALL_ISLANDS.filter((i) => i.spots.every((sp) => visited.has(sp.id))).length;
 
   const grid = el('div', 'stat-grid');
   grid.append(
-    stat('已解鎖水果島', `${doneIslands} / ${ISLANDS.length}`),
+    stat('已解鎖島嶼', `${doneIslands} / ${ALL_ISLANDS.length}`),
     stat('已學知識點', `${visited.size} / ${totalSpots}`),
+    stat('已認識居民', `${met.size} / ${TOTAL_RESIDENTS}`),
     stat('完成度', `${Math.round((visited.size / totalSpots) * 100)}%`),
   );
   host.append(grid);
 
   const barWrap = el('div', 'prog-list');
-  for (const island of ISLANDS) {
+  for (const island of ALL_ISLANDS) {
     const done = island.spots.filter((sp) => visited.has(sp.id)).length;
     const row = el('div', 'prog-row');
     row.style.setProperty('--c', island.fruit.color);
@@ -81,7 +83,7 @@ function buildFilterOptions(select: HTMLSelectElement): void {
   const allOpt = el('option', undefined, '全部事件');
   allOpt.value = 'all';
   select.append(allOpt);
-  for (const island of ISLANDS) {
+  for (const island of ALL_ISLANDS) {
     const opt = el('option', undefined, island.fruit.name);
     opt.value = island.fruit.id;
     select.append(opt);
@@ -102,14 +104,14 @@ function renderList(list: HTMLElement, filter: HTMLSelectElement, s: AppState): 
 
   for (const e of entries) {
     const li = el('li', 'log-item');
-    const fruit = e.islandId ? FRUIT_BY_ID[e.islandId] : undefined;
+    const fruit = e.islandId ? ISLAND_FRUIT_BY_ID[e.islandId] : undefined;
     if (fruit) li.style.setProperty('--c', fruit.color);
 
     const time = el('span', 'log-time', e.at);
     const text = el('span', 'log-text');
     text.textContent = e.text;
 
-    const spot = e.spotId ? SPOT_BY_ID[e.spotId] : undefined;
+    const spot = e.spotId ? ALL_SPOT_BY_ID[e.spotId] : undefined;
     const kind = el('span', 'log-kind');
     kind.textContent = spot ? kindName(spot.kind) : '島嶼';
 
@@ -128,6 +130,8 @@ function kindName(kind: string): string {
     nutrition: '營養',
     trivia: '冷知識',
     market: '北農',
+    org: '組織',
+    rule: '制度',
   };
   return map[kind] ?? '知識';
 }

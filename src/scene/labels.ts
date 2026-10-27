@@ -12,13 +12,13 @@ function base(cls: string): Label {
   return { obj, el };
 }
 
-/** 島嶼名牌：水果名 + 知識點數 */
-export function islandLabel(name: string, spotCount: number): Label {
+/** 島嶼名牌：水果名 + 知識點數（+ 居民數） */
+export function islandLabel(name: string, spotCount: number, peopleCount = 0): Label {
   const label = base('lbl lbl-island');
   const b = document.createElement('b');
   b.textContent = name;
   const i = document.createElement('i');
-  i.textContent = `${spotCount} 知識點`;
+  i.textContent = peopleCount > 0 ? `${spotCount} 知識點・${peopleCount} 位居民` : `${spotCount} 知識點`;
   label.el.append(b, i);
   return label;
 }
@@ -32,6 +32,20 @@ export function spotLabel(mark: string, title: string, color: string): Label {
   const span = document.createElement('span');
   span.textContent = title;
   label.el.append(em, span);
+  return label;
+}
+
+/** 居民名牌：名稱 + 身分，BOSS 另有皇冠記號 */
+export function residentLabel(name: string, role: string, color: string, boss = false): Label {
+  const label = base(`lbl lbl-resident${boss ? ' is-boss' : ''}`);
+  const em = document.createElement('em');
+  em.textContent = boss ? '★' : '●';
+  em.style.background = color;
+  const b = document.createElement('b');
+  b.textContent = name;
+  const i = document.createElement('i');
+  i.textContent = role;
+  label.el.append(em, b, i);
   return label;
 }
 

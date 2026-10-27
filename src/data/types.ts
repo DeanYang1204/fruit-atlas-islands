@@ -1,6 +1,32 @@
 export type TimeKey = 'dawn' | 'day' | 'dusk' | 'night';
 
-export type ToggleKey = 'names' | 'fruits' | 'flows' | 'freeze' | 'bird' | 'log';
+export type ToggleKey = 'names' | 'fruits' | 'people' | 'flows' | 'freeze' | 'bird' | 'log';
+
+/** 島上居民的兩種身分：水果品種化身／北農員工 */
+export type ResidentKind = 'variety' | 'staff';
+
+export interface Resident {
+  /** 全域唯一 id */
+  id: string;
+  /** 所屬島 id（水果 id 或 policy） */
+  islandId: string;
+  kind: ResidentKind;
+  /** 顯示名稱，例：愛文人 */
+  name: string;
+  /** 短稱，例：愛文 */
+  short: string;
+  /** 身分標籤，例：芒果品種 */
+  role: string;
+  /** 是否為政策島的唯一 BOSS（總經理） */
+  boss: boolean;
+  lead: string;
+  points: string[];
+  keywords: string[];
+  /** 頭部配色 */
+  color: string;
+  /** 制服（軀幹）配色 */
+  uniform: string;
+}
 
 export interface Region {
   /** 產地（縣市／鄉鎮） */
@@ -67,7 +93,9 @@ export type SpotKind =
   | 'pick'
   | 'nutrition'
   | 'trivia'
-  | 'market';
+  | 'market'
+  | 'org'
+  | 'rule';
 
 export interface Spot {
   /** 全域唯一 id：${fruitId}:${kind} */

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { Island } from '../data/spots';
+import { RESIDENTS_BY_ISLAND } from '../data/residents';
 import { createTree, spiralPosition } from './tree';
 import { islandLabel, type Label } from './labels';
+import { createNpc, updateNpc, setNpcLabelVisible, type NpcView } from './npc';
 import type { TreeView } from './tree';
 
 export const HEX_R = 6.0;
@@ -38,6 +40,13 @@ export interface IslandView {
   grassMat: THREE.MeshStandardMaterial;
   trees: Map<string, TreeView>;
   label: Label;
+  /** 散步的居民（水果人／北農員工） */
+  npcs: Map<string, NpcView>;
+  npcRoot: THREE.Group;
+  /** 是否為政策島（沒有水果居民，只有北農員工） */
+  policy: boolean;
+  /** 距離鏡頭夠近時才讓居民活動 */
+  npcActive: boolean;
   /** 目前是否當令（依月份篩選） */
   inSeason: boolean;
   /** 目標亮度倍率 */
@@ -110,14 +119,14 @@ export function createIsland(island: Island): IslandView {
     group.add(rock);
   }
 
-  // 知識點果樹
+  // 知識點果樹（把內圈留給果樹，外環留給居民步道）
   const trees = new Map<string, TreeView>();
-  const layoutRadius = HEX_R * 0.68;
+  const layoutRadius = HEX_R * 0.58;
   spots.forEach((spot, idx) => {
     const p = spiralPosition(idx, spots.length, layoutRadius);
     // 避開中央立牌
     const len = Math.hypot(p.x, p.y);
-    const scale = len < 1.9 ? 1.9 / Math.max(len, 0.001) : 1;
+    const scale = len < 1.75 ? 1.75 / Math.max(len, 0.001) : 1;
     const tree = createTree(spot, fruit.color);
     tree.group.position.set(p.x * scale, TOP_Y + 0.1, p.y * scale);
     tree.group.rotation.y = (idx * 1.7) % (Math.PI * 2);
@@ -125,8 +134,19 @@ export function createIsland(island: Island): IslandView {
     trees.set(spot.id, tree);
   });
 
-  const label = islandLabel(fruit.name, spots.length);
-  label.obj.position.set(0, TOP_Y + 2.6, 0);
+  // 居民：水果島是品種化身，政策島是北農員工
+  const npcRoot = new THREE.Group();
+  const npcs = new Map<string, NpcView>();
+  const people = RESIDENTS_BY_ISLAND[fruit.id] ?? [];
+  people.forEach((resident, i) => {
+    const npc = createNpc(resident, i, people.length);
+    npcRoot.add(npc.root);
+    npcs.set(resident.id, npc);
+  });
+  group.add(npcRoot);
+
+  const label = islandLabel(fruit.name, spots.length, npcs.size);
+  label.obj.position.set(0, TOP_Y + 2.9, 0);
   group.add(label.obj);
 
   const view: IslandView = {
@@ -137,6 +157,10 @@ export function createIsland(island: Island): IslandView {
     grassMat,
     trees,
     label,
+    npcs,
+    npcRoot,
+    policy: fruit.id === 'policy',
+    npcActive: false,
     inSeason: true,
     glow: 0.05,
     currentGlow: 0.05,
@@ -151,4 +175,12 @@ export function updateIsland(view: IslandView, t: number, dt: number): void {
   view.glow = view.inSeason ? 0.16 + Math.sin(t * 1.2) * 0.05 : 0.015;
   view.currentGlow += (view.glow - view.currentGlow) * Math.min(1, dt * 4);
   view.grassMat.emissiveIntensity = view.currentGlow;
+
+  if (!view.npcRoot.visible && view.npcs.size === 0) return;
+  for (const npc of view.npcs.values()) updateNpc(npc, t, dt, view.npcActive);
+}
+
+/** 選島時才展開居民名牌，避免整片畫面被文字淹沒 */
+export function updateIslandNpcLabels(view: IslandView, show: boolean): void {
+  for (const npc of view.npcs.values()) setNpcLabelVisible(npc, show);
 }

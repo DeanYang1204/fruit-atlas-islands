@@ -8,14 +8,17 @@ export interface LogEntry {
   text: string;
 }
 
-export type SidebarTab = 'islands' | 'spots' | 'season';
+export type SidebarTab = 'islands' | 'spots' | 'residents' | 'season';
 
 export interface AppState {
   /** 目前選取的島（水果 id） */
   islandId: string | null;
   /** 目前選取的知識點 */
   spotId: string | null;
+  /** 目前選取的島上居民 */
+  residentId: string | null;
   hoverSpotId: string | null;
+  hoverResidentId: string | null;
   /** 一天中的分鐘數 0–1439 */
   minutes: number;
   preset: TimeKey;
@@ -26,6 +29,8 @@ export interface AppState {
   /** 分類（科別）篩選 */
   families: string[];
   visited: string[];
+  /** 認識過的島上居民 */
+  met: string[];
   log: LogEntry[];
   sidebarOpen: boolean;
   logOpen: boolean;
@@ -43,10 +48,11 @@ type Keys = keyof AppState;
 type Listener = (s: AppState, changed: Set<Keys>) => void;
 
 const STORAGE_KEY = 'fruit-atlas-islands.visited.v1';
+const MET_KEY = 'fruit-atlas-islands.met.v1';
 
-function loadVisited(): string[] {
+function loadStringArray(key: string): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
@@ -55,9 +61,9 @@ function loadVisited(): string[] {
   }
 }
 
-function persistVisited(visited: string[]): void {
+function persist(key: string, value: string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(visited));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* 隱私模式或容量不足時靜默略過 */
   }
@@ -67,14 +73,17 @@ class Store {
   readonly state: AppState = {
     islandId: null,
     spotId: null,
+    residentId: null,
     hoverSpotId: null,
+    hoverResidentId: null,
     minutes: 720,
     preset: 'day',
     tab: 'islands',
     query: '',
     month: null,
     families: [],
-    visited: loadVisited(),
+    visited: loadStringArray(STORAGE_KEY),
+    met: loadStringArray(MET_KEY),
     log: [],
     sidebarOpen: false,
     logOpen: false,
@@ -85,6 +94,7 @@ class Store {
     toggles: {
       names: true,
       fruits: true,
+      people: true,
       flows: false,
       freeze: false,
       bird: false,
@@ -115,7 +125,8 @@ class Store {
     }
     if (changed.size === 0) return;
 
-    if (changed.has('visited')) persistVisited(this.state.visited);
+    if (changed.has('visited')) persist(STORAGE_KEY, this.state.visited);
+    if (changed.has('met')) persist(MET_KEY, this.state.met);
 
     for (const l of [...this.listeners]) {
       if (!l.keys || intersects(l.keys, changed)) l.fn(this.state, changed);
@@ -125,6 +136,11 @@ class Store {
   markVisited(spotId: string): void {
     if (this.state.visited.includes(spotId)) return;
     this.set({ visited: [...this.state.visited, spotId] });
+  }
+
+  markMet(residentId: string): void {
+    if (this.state.met.includes(residentId)) return;
+    this.set({ met: [...this.state.met, residentId] });
   }
 
   pushLog(entry: Omit<LogEntry, 'id' | 'at'>): void {

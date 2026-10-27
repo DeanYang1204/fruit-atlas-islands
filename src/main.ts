@@ -1,6 +1,13 @@
 import './styles.css';
-import { FRUIT_BY_ID } from './data/fruits';
-import { ISLANDS, MONTHS, SPOT_BY_ID, TOTAL_ISLANDS, TOTAL_SPOTS } from './data/spots';
+import {
+  ALL_ISLANDS,
+  ALL_SPOT_BY_ID,
+  MONTHS,
+  TOTAL_ISLANDS,
+  TOTAL_SPOTS,
+  islandName,
+} from './data/atlas';
+import { RESIDENT_BY_ID, TOTAL_RESIDENTS } from './data/residents';
 import type { TimeKey, ToggleKey } from './data/types';
 import { formatClock, hourNote } from './scene/palette';
 import { World } from './scene/world';
@@ -32,33 +39,46 @@ function presetOf(minutes: number): TimeKey {
   return 'night';
 }
 
-function fruitName(id: string | null): string {
-  if (!id) return '';
-  return FRUIT_BY_ID[id]?.name ?? id;
-}
-
-function updateMascot(hoverId: string | null): void {
+function updateMascot(hoverSpotId: string | null, hoverResidentId: string | null = null): void {
   const s = store.state;
-  if (hoverId) {
-    const spot = SPOT_BY_ID[hoverId];
-    mascotText.textContent = spot ? `${fruitName(spot.fruitId)}｜${spot.title}` : '點一格，開始探索';
+  if (hoverResidentId) {
+    const r = RESIDENT_BY_ID[hoverResidentId];
+    mascotText.textContent = r ? `${r.name}｜${r.role}` : '路上有人在走，點他看看';
+    return;
+  }
+  if (hoverSpotId) {
+    const spot = ALL_SPOT_BY_ID[hoverSpotId];
+    mascotText.textContent = spot ? `${islandName(spot.fruitId)}｜${spot.title}` : '點一格，開始探索';
+    return;
+  }
+  if (s.residentId) {
+    const r = RESIDENT_BY_ID[s.residentId];
+    mascotText.textContent = r ? `跟 ${r.name} 聊過了` : '路上有人在走，點他看看';
     return;
   }
   if (s.spotId) {
-    const spot = SPOT_BY_ID[s.spotId];
+    const spot = ALL_SPOT_BY_ID[s.spotId];
     mascotText.textContent = spot ? `正在看：${spot.title}` : '點一格，開始探索';
     return;
   }
-  if (s.islandId) mascotText.textContent = `${fruitName(s.islandId)}島｜點果樹開始學`;
-  else mascotText.textContent = '果籽 · 點一格，開始探索';
+  if (s.islandId) {
+    mascotText.textContent = islandHint(s.islandId);
+  } else mascotText.textContent = '果籽 · 點一格，開始探索';
+}
+
+function islandHint(id: string): string {
+  return id === 'policy'
+    ? '政策島｜這裡只有北農員工，沒有水果居民'
+    : `${islandName(id)}島｜點果樹學知識，點路上的居民聊聊天`;
 }
 
 function updateStatus(s: AppState): void {
   const bits: string[] = [];
-  if (s.islandId) bits.push(`目前：${fruitName(s.islandId)}`);
+  if (s.islandId) bits.push(`目前：${islandName(s.islandId)}`);
   if (s.month) bits.push(`${MONTHS[s.month - 1]}當令`);
   if (s.families.length > 0) bits.push(`科別篩選 ${s.families.length}`);
   bits.push(`已學 ${s.visited.length} / ${TOTAL_SPOTS}`);
+  bits.push(`居民 ${s.met.length} / ${TOTAL_RESIDENTS}`);
   statusEl.textContent = bits.join('　・　');
 }
 
@@ -67,18 +87,31 @@ const world = new World(stage, {
     store.set({ hoverSpotId: id });
     updateMascot(id);
   },
+  onHoverResident: (id) => {
+    store.set({ hoverResidentId: id });
+    if (id) updateMascot(null, id);
+    else updateMascot(store.state.hoverSpotId);
+  },
   onSelectSpot: (id) => {
-    const spot = SPOT_BY_ID[id];
+    const spot = ALL_SPOT_BY_ID[id];
     if (!spot) return;
-    store.set({ islandId: spot.fruitId, spotId: id, cardOpen: true });
+    store.set({ islandId: spot.fruitId, spotId: id, residentId: null, cardOpen: true });
     store.markVisited(id);
-    store.pushLog({ islandId: spot.fruitId, spotId: id, text: `${fruitName(spot.fruitId)}｜${spot.title}` });
+    store.pushLog({ islandId: spot.fruitId, spotId: id, text: `${islandName(spot.fruitId)}｜${spot.title}` });
     updateMascot(id);
   },
   onSelectIsland: (fruitId) => {
-    store.set({ islandId: fruitId, spotId: null, cardOpen: true });
-    store.pushLog({ islandId: fruitId, spotId: null, text: `抵達「${fruitName(fruitId)}」島` });
+    store.set({ islandId: fruitId, spotId: null, residentId: null, cardOpen: true });
+    store.pushLog({ islandId: fruitId, spotId: null, text: `抵達「${islandName(fruitId)}」島` });
     updateMascot(null);
+  },
+  onSelectResident: (id) => {
+    const resident = RESIDENT_BY_ID[id];
+    if (!resident) return;
+    store.set({ islandId: resident.islandId, spotId: null, residentId: id, cardOpen: true });
+    store.markMet(id);
+    store.pushLog({ islandId: resident.islandId, spotId: null, text: `遇見 ${resident.name}` });
+    updateMascot(null, id);
   },
   onFrame: () => {
     if (firstFrame) {
@@ -104,9 +137,10 @@ initIntro();
 
 // ---- 狀態 → 3D 世界同步 ----
 
-store.on(['islandId', 'spotId'], (s) => {
-  world.select(s.islandId, s.spotId);
-  if (s.spotId) world.focusSpot(s.spotId);
+store.on(['islandId', 'spotId', 'residentId'], (s) => {
+  world.select(s.islandId, s.spotId, s.residentId);
+  if (s.residentId) world.focusResident(s.residentId);
+  else if (s.spotId) world.focusSpot(s.spotId);
   else if (s.islandId) world.focusIsland(s.islandId);
   updateStatus(s);
   updateMascot(null);
@@ -132,7 +166,7 @@ store.on(['month', 'families'], (s) => {
   updateStatus(s);
 });
 
-store.on(['visited'], (s) => updateStatus(s));
+store.on(['visited', 'met'], (s) => updateStatus(s));
 
 store.on(['sidebarOpen'], (s) => {
   document.body.classList.toggle('sidebar-open', s.sidebarOpen);
@@ -160,15 +194,15 @@ function runTourStep(): void {
   clearTourTimer();
   const i = store.state.tourIndex;
   if (i === null) return;
-  if (i >= ISLANDS.length) {
+  if (i >= ALL_ISLANDS.length) {
     stopTour();
     return;
   }
 
-  const island = ISLANDS[i];
-  store.set({ islandId: island.fruit.id, spotId: null, cardOpen: true });
-  tourCaption.textContent = `${String(i + 1).padStart(2, '0')} / ${ISLANDS.length}　${island.fruit.name}｜${island.fruit.tagline}`;
-  tourTime.textContent = `${String(i + 1).padStart(2, '0')} / ${ISLANDS.length}`;
+  const island = ALL_ISLANDS[i];
+  store.set({ islandId: island.fruit.id, spotId: null, residentId: null, cardOpen: true });
+  tourCaption.textContent = `${String(i + 1).padStart(2, '0')} / ${ALL_ISLANDS.length}　${island.fruit.name}｜${island.fruit.tagline}`;
+  tourTime.textContent = `${String(i + 1).padStart(2, '0')} / ${ALL_ISLANDS.length}`;
   tourPause.textContent = '暫停';
 
   if (store.state.tourPlaying) {
@@ -215,7 +249,7 @@ tourExit.addEventListener('click', stopTour);
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   if (e.key === 'Escape') {
-    store.set({ cardOpen: false, spotId: null, sidebarOpen: false, logOpen: false });
+    store.set({ cardOpen: false, spotId: null, residentId: null, sidebarOpen: false, logOpen: false });
     store.set({ toggles: { ...store.state.toggles, log: false } });
     if (store.state.tourIndex !== null) stopTour();
   }
@@ -224,7 +258,7 @@ window.addEventListener('keydown', (e) => {
 // ---- 初始化顯示 ----
 
 const sideMeta = must<HTMLElement>('#side-meta');
-sideMeta.textContent = `${TOTAL_ISLANDS} 座水果島 ／ ${TOTAL_SPOTS} 個知識點　選一座島，走進它的果園風景。`;
+sideMeta.innerHTML = `${TOTAL_ISLANDS} 座水果島 ＋ 政策島　／<br>${TOTAL_SPOTS} 個知識點 ／ ${TOTAL_RESIDENTS} 位居民<br>選一座島，走進它的果園風景。`;
 
 world.setTime(store.state.minutes);
 world.setIslandFilter(store.state.month, store.state.families);
