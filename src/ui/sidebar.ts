@@ -134,7 +134,8 @@ function renderResidents(host: HTMLElement, q: string, s: AppState, met: Set<str
       btn.append(
         el('em', undefined, r.boss ? '★' : '●'),
         el('span', undefined, r.name),
-        el('i', undefined, met.has(r.id) ? '✓' : r.short),
+        // 名字已含品種與水果（例：金鑽 鳳梨），這格只留「已認識」記號
+        el('i', undefined, met.has(r.id) ? '✓' : ''),
       );
       row.append(btn);
     }

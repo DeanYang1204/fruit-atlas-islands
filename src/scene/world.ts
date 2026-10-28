@@ -11,6 +11,7 @@ import type { NpcView } from './npc';
 import { createCrowd, npcIslandId, npcWorldPosition, setCrowdLabels, updateCrowd, type Crowd } from './crowd';
 import { buildBridges } from './bridges';
 import { Ocean } from './water';
+import { createSeaLife, type SeaLife } from './sealife';
 import { buildFlows, updateFlows, type FlowView } from './flows';
 import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
 import { setLabelActive, setLabelVisible } from './labels';
@@ -90,6 +91,8 @@ export class World {
   private bossIsland: string | null = null;
 
   private readonly ocean: Ocean;
+  /** 海洋生態：魚群、躍水的海豚、換氣的鯨魚 */
+  private readonly seaLife: SeaLife;
   private readonly sun: THREE.DirectionalLight;
   private readonly hemi: THREE.HemisphereLight;
   private readonly ambient: THREE.AmbientLight;
@@ -228,6 +231,9 @@ export class World {
     this.ocean = new Ocean();
     this.scene.add(this.ocean.mesh);
 
+    this.seaLife = createSeaLife();
+    this.scene.add(this.seaLife.group);
+
     for (const island of ALL_ISLANDS) {
       const view = createIsland(island);
       this.islands.push(view);
@@ -268,6 +274,11 @@ export class World {
     this.applySky(this.skyNow);
     // 初始只顯示島嶼名牌，知識點名牌等 hover / 選取才出現
     this.updateLabelVisibility();
+
+    // QA 用：?debug 時把 world 掛到 window，Playwright 才能直接操作鏡頭
+    if (new URLSearchParams(location.search).has('debug')) {
+      (window as unknown as Record<string, unknown>).__world = this;
+    }
   }
 
   /** 雨：一小片跟著鏡頭走的落雨線段（每一滴 = 兩個端點） */
@@ -637,6 +648,9 @@ export class World {
     const t = this.time;
 
     this.ocean.update(t);
+
+    // 海裡的住民：魚群繞游、海豚躍水、鯨魚換氣（暫停時 dt=0，只擺尾不前進）
+    this.seaLife.update(t, this.frozen ? 0 : dt);
 
     const peopleOn = this.toggles.people;
     for (const isl of this.islands) {

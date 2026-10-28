@@ -58,7 +58,8 @@ function buildVarietyResidents(): Resident[] {
         id,
         islandId: fruit.id,
         kind: 'variety',
-        name: `${short}人`,
+        // 名字 = 品種 + 所屬水果（例：桂味 荔枝、金鑽 鳳梨），一眼就知道他是什麼
+        name: `${short} ${fruit.name}`,
         short,
         role: `${fruit.name}品種`,
         boss: false,

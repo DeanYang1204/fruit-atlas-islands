@@ -643,7 +643,8 @@ button {
 
 /* ---------- HUD 圖層開關 ---------- */
 
-/* 底部中央堆疊：顯示選項（HUD）在最下、島嶼快速列疊在其上，兩者永遠不重疊 */
+/* 底部中央：桌機把「島嶼快速列 + 顯示選項」融合成同一顆藥丸列；
+   窄螢幕（≤1180px）退回上下兩顆堆疊，兩者永遠不重疊 */
 .bottom-stack {
   position: absolute;
   left: 352px;
@@ -651,10 +652,49 @@ button {
   bottom: 166px;
   z-index: 12;
   display: flex;
-  flex-direction: column-reverse;
-  align-items: stretch;
-  gap: 10px;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px 5px 6px;
+  border-radius: 999px;
   pointer-events: none;
+}
+
+/* 融合模式：外框玻璃由容器提供，內部兩塊變透明 */
+.bottom-stack {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+}
+
+.bottom-stack .dock,
+.bottom-stack .hud .toggles {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 999px;
+}
+
+.bottom-stack .dock {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px 2px 6px;
+}
+
+.bottom-stack .hud {
+  flex: 0 0 auto;
+}
+
+.bottom-stack .hud .toggles {
+  flex: 0 0 auto;
+  padding: 0 0 0 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .bottom-stack > * {
@@ -738,8 +778,8 @@ button {
   font-weight: 700;
 }
 
-/* 中窄螢幕：顯示選項改成圖示為主，讓 HUD 收成單排、不與快速列擠在一起 */
-@media (max-width: 1500px) {
+/* 中窄螢幕：顯示選項改成圖示為主，讓融合列收成單排 */
+@media (max-width: 1680px) {
   .seg2 .tg span {
     display: none;
   }
@@ -1664,6 +1704,30 @@ button {
   .bottom-stack,
   .legend {
     left: 320px;
+  }
+
+  /* 窄螢幕退回上下兩顆堆疊（融合列塞不下） */
+  .bottom-stack {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .bottom-stack .dock {
+    padding: 6px 8px;
+  }
+
+  .bottom-stack .hud .toggles {
+    padding: 7px 9px;
+    margin-left: 0;
+    border-left: 0;
+    border-radius: 999px;
   }
 
   .controls {
