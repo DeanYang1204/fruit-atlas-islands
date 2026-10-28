@@ -1511,7 +1511,10 @@ button {
 
 .lbl-resident.is-boss {
   border-color: #d8a93a;
-  box-shadow: 0 4px 14px rgba(216, 169, 58, 0.36);
+  background: rgba(255, 249, 235, 0.95);
+  box-shadow: 0 6px 18px rgba(216, 169, 58, 0.42), 0 0 0 1px rgba(216, 169, 58, 0.3) inset;
+  /* 吳總的名牌永遠在最上層，別被其他名牌蓋住 */
+  z-index: 3;
 }
 
 .lbl-resident.is-boss b {

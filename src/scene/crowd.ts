@@ -65,19 +65,24 @@ export function updateCrowd(
   dt: number,
   visible: boolean,
 ): void {
-  crowd.group.visible = visible;
-  if (!visible) return;
+  // 吳總永遠在場：關掉居民圖層或鏡頭拉遠，他還是要讓大家看得到
+  crowd.group.visible = true;
   for (const view of crowd.views) {
+    const isBoss = view === crowd.boss;
     const roam = crowd.roam.get(view.data.residentId);
     if (roam) updateRoam(view.root, roam, dt, crowd.net);
     const dist = camera.position.distanceTo(view.root.position);
-    updateNpc(view, t, dt, visible && dist < ACTIVE_DISTANCE);
+    updateNpc(view, t, dt, isBoss || (visible && dist < ACTIVE_DISTANCE));
   }
 }
 
-/** 只展開指定島上現在的角色名牌，避免整片畫面被文字淹沒 */
+/** 只展開指定島上現在的角色名牌，避免整片畫面被文字淹沒；吳總的名牌永遠開著 */
 export function setCrowdLabels(crowd: Crowd, islandId: string | null, show: boolean): void {
   for (const view of crowd.views) {
+    if (view === crowd.boss) {
+      setNpcLabelVisible(view, true);
+      continue;
+    }
     const roam = crowd.roam.get(view.data.residentId);
     const onIsland = !!roam && roam.island.fruitId === islandId;
     setNpcLabelVisible(view, show && onIsland);

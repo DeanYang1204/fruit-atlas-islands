@@ -53,6 +53,12 @@ export function setLabelActive(label: Label, active: boolean): void {
   label.el.classList.toggle('is-active', active);
 }
 
+/** 改居民名牌第二行（吳總巡到哪座島會即時更新） */
+export function setResidentLabelRole(label: Label, role: string): void {
+  const i = label.el.querySelector('i');
+  if (i) i.textContent = role;
+}
+
 export function setLabelVisible(label: Label, visible: boolean): void {
   label.el.classList.toggle('is-hidden', !visible);
 }

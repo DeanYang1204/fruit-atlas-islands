@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { ALL_ISLANDS } from '../data/atlas';
+import { ALL_ISLANDS, islandLabelName } from '../data/atlas';
 import { FRUIT_BY_ID } from '../data/fruits';
 import type { ToggleKey, WeatherKey } from '../data/types';
 export type { ToggleKey, WeatherKey };
@@ -14,7 +14,7 @@ import { Ocean } from './water';
 import { createSeaLife, type SeaLife } from './sealife';
 import { buildFlows, updateFlows, type FlowView } from './flows';
 import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
-import { setLabelActive, setLabelVisible } from './labels';
+import { setLabelActive, setLabelVisible, setResidentLabelRole } from './labels';
 import { setPropNight } from './props';
 
 export interface WorldCallbacks {
@@ -722,6 +722,8 @@ export class World {
     const id = npcIslandId(this.crowd!, boss.data.residentId);
     if (id !== this.bossIsland) {
       this.bossIsland = id;
+      // 名牌第二行直接寫他現在巡到哪，抬頭就看到，不用找狀態列
+      setResidentLabelRole(boss.label, id ? `總經理・在${islandLabelName(id)}` : '總經理・巡視中');
       this.cb.onBossIsland(id);
     }
   }

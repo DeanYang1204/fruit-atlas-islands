@@ -182,7 +182,7 @@ export function createNpc(resident: Resident, index: number): NpcView {
   const root = new THREE.Group();
   root.add(anim, shadow);
 
-  const label = residentLabel(resident.name, resident.role, resident.color, resident.boss);
+  const label = residentLabel(resident.name, resident.boss ? '總經理' : resident.role, resident.color, resident.boss);
   label.obj.position.set(0, resident.boss ? BOSS_LABEL_Y : 1.32, 0);
   setHidden(label, true);
   root.add(label.obj);
