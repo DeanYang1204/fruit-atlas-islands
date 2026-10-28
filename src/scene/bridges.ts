@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bake, part } from './bake';
+import { TOY } from './palette';
 import { TOP_Y, type IslandView } from './island';
 
 /**
@@ -14,9 +15,10 @@ const EDGE_START = 5.05;
 /** 橋面拱起的高度 */
 const ARCH = 0.34;
 const DECK_W = 1.72;
-const DECK_COLOR = '#C89B63';
-const RAIL_COLOR = '#A87C4A';
-const PIER_COLOR = '#A9A096';
+const DECK_COLOR = TOY.wood;
+const RAIL_COLOR = TOY.cream;
+const POST_COLOR = TOY.woodDeep;
+const PIER_COLOR = TOY.stoneDeep;
 
 const PLANK = new THREE.BoxGeometry(DECK_W, 0.13, 0.3);
 const RAIL_POST = new THREE.BoxGeometry(0.13, 0.46, 0.13);
@@ -86,7 +88,7 @@ function buildBridge(a: IslandView, b: IslandView): THREE.Group {
     const z = -length / 2 + u * length;
     const y = archY(u);
     for (const x of [-railX, railX]) {
-      parts.push(part(RAIL_POST, RAIL_COLOR, (g) => g.translate(x, y + 0.28, z)));
+      parts.push(part(RAIL_POST, POST_COLOR, (g) => g.translate(x, y + 0.28, z)));
     }
   }
   for (let i = 0; i < planks; i++) {

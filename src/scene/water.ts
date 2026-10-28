@@ -13,12 +13,13 @@ export class Ocean {
     const attr = this.geo.getAttribute('position') as THREE.BufferAttribute;
     this.base = Float32Array.from(attr.array as Float32Array);
 
+    // 玩具模型的海不會是寫實的深藍：偏青綠、低金屬感，像一盤上了釉的淺色水
     this.mat = new THREE.MeshStandardMaterial({
-      color: 0x3f9fb8,
-      roughness: 0.24,
-      metalness: 0.18,
+      color: 0x86c3c8,
+      roughness: 0.42,
+      metalness: 0.05,
       transparent: true,
-      opacity: 0.93,
+      opacity: 0.94,
       flatShading: true,
     });
 

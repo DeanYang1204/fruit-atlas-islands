@@ -14,6 +14,7 @@ import { Ocean } from './water';
 import { buildFlows, updateFlows, type FlowView } from './flows';
 import { getBlankState, sampleSky, sunPosition, type SkyState } from './palette';
 import { setLabelActive, setLabelVisible } from './labels';
+import { setPropNight } from './props';
 
 export interface WorldCallbacks {
   onHoverSpot(spotId: string | null): void;
@@ -35,9 +36,12 @@ interface Flight {
   duration: number;
 }
 
-// 島嶼被橋連成一片後群島變大了，全景鏡頭要再退後一點
-const HOME_POS = new THREE.Vector3(2, 68, 84);
+// 長焦鏡頭（FOV 34）是微縮模型的關鍵：透視被壓扁，群島看起來像桌上的玩具城市。
+// 鏡頭因此要比廣角時再退後一點，才框得住整片群島。
+const HOME_POS = new THREE.Vector3(2, 84, 103);
 const HOME_TARGET = new THREE.Vector3(2, 0, 4);
+/** 鳥瞰全景（長焦下要更高才看得到全部） */
+const BIRD_POS = new THREE.Vector3(0, 118, 0.01);
 
 const SKY_VERT = /* glsl */ `
 varying vec3 vWorldPosition;
@@ -89,6 +93,8 @@ export class World {
   private readonly sun: THREE.DirectionalLight;
   private readonly hemi: THREE.HemisphereLight;
   private readonly ambient: THREE.AmbientLight;
+  /** 冷色補光：讓背光面不是死黑，才有塑膠玩具的通透感 */
+  private readonly fill: THREE.DirectionalLight;
   private readonly skyMat: THREE.ShaderMaterial;
   private readonly clouds = new THREE.Group();
   private readonly clock = new THREE.Clock();
@@ -117,6 +123,8 @@ export class World {
   private readonly skyGoal: SkyState = getBlankState();
   private readonly sunNow = new THREE.Vector3(0, 40, 20);
   private readonly sunGoal = new THREE.Vector3(0, 40, 20);
+  /** 上一次重算陰影時的太陽位置（四捨五入成格子，動夠多才重算） */
+  private shadowSig = '';
 
   toggles: Record<ToggleKey, boolean> = {
     names: true,
@@ -143,8 +151,11 @@ export class World {
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // 只有靜態幾何投影，所以陰影圖不必每幀重算：太陽動到定位點才更新一次
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 0.96;
     container.appendChild(this.renderer.domElement);
 
     this.labelRenderer = new CSS2DRenderer();
@@ -157,15 +168,16 @@ export class World {
     });
     container.appendChild(this.labelRenderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(42, w / h, 0.5, 1200);
+    // 長焦：壓扁透視，整座群島像一組放在桌上的模型
+    this.camera = new THREE.PerspectiveCamera(34, w / h, 0.5, 640);
     this.camera.position.copy(HOME_POS);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.copy(HOME_TARGET);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
-    this.controls.minDistance = 14;
-    this.controls.maxDistance = 150;
+    this.controls.minDistance = 16;
+    this.controls.maxDistance = 190;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.minPolarAngle = Math.PI * 0.08;
     this.controls.rotateSpeed = 0.6;
@@ -174,38 +186,44 @@ export class World {
       this.flight = null;
     });
 
-    this.ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    this.hemi = new THREE.HemisphereLight(0xbfe6f5, 0x6e8f5a, 0.95);
-    this.sun = new THREE.DirectionalLight(0xfff7e4, 2.2);
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.16);
+    // 半球光：天空是淡藍、地面是陶土色，塑膠玩具的受光就是這樣來的
+    this.hemi = new THREE.HemisphereLight(0xeff6fa, 0x94826b, 1.32);
+    this.sun = new THREE.DirectionalLight(0xfff3de, 2.85);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 260;
-    this.sun.shadow.camera.left = -58;
-    this.sun.shadow.camera.right = 58;
-    this.sun.shadow.camera.top = 58;
-    this.sun.shadow.camera.bottom = -58;
-    this.sun.shadow.bias = -0.0007;
-    this.sun.shadow.normalBias = 0.03;
-    this.scene.add(this.ambient, this.hemi, this.sun, this.sun.target);
+    this.sun.shadow.camera.far = 300;
+    this.sun.shadow.camera.left = -62;
+    this.sun.shadow.camera.right = 62;
+    this.sun.shadow.camera.top = 62;
+    this.sun.shadow.camera.bottom = -62;
+    this.sun.shadow.bias = -0.0006;
+    this.sun.shadow.normalBias = 0.035;
+    this.sun.shadow.radius = 2.5;
+    // 補光：從太陽的背面打一道冷色，陰影才不會黑成一片
+    this.fill = new THREE.DirectionalLight(0xbfd6ff, 0.34);
+    this.fill.position.set(24, 20, -28);
+    this.scene.add(this.ambient, this.hemi, this.sun, this.sun.target, this.fill);
 
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        topColor: { value: new THREE.Color('#7FC6E8') },
-        bottomColor: { value: new THREE.Color('#E1F4FC') },
-        offset: { value: 60 },
-        exponent: { value: 0.62 },
+        topColor: { value: new THREE.Color('#9FD3EE') },
+        bottomColor: { value: new THREE.Color('#F7EEE0') },
+        offset: { value: 42 },
+        exponent: { value: 0.66 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
       side: THREE.BackSide,
       depthWrite: false,
     });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), this.skyMat);
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), this.skyMat);
     sky.renderOrder = -1000;
     this.scene.add(sky);
 
-    this.scene.fog = new THREE.Fog(new THREE.Color('#DFF2FB'), 110, 420);
+    // 暖色的奶油霧：遠處的島會被霧吃掉、泛白，這正是桌上模型的空氣感
+    this.scene.fog = new THREE.Fog(new THREE.Color('#F4EEE3'), 120, 460);
 
     this.ocean = new Ocean();
     this.scene.add(this.ocean.mesh);
@@ -476,8 +494,8 @@ export class World {
     if (!island) return;
     const target = island.center.clone();
     const offset = this.birdOn
-      ? new THREE.Vector3(0, 44, 0.01)
-      : new THREE.Vector3(4.2, 15.5, 16.5);
+      ? new THREE.Vector3(0, 56, 0.01)
+      : new THREE.Vector3(5.4, 20, 21);
     this.flyTo(target.clone().add(offset), target, 1.05);
   }
 
@@ -488,8 +506,8 @@ export class World {
     tree.group.getWorldPosition(wp);
     const target = wp.clone().add(new THREE.Vector3(0, 0.9, 0));
     const offset = this.birdOn
-      ? new THREE.Vector3(0, 22, 0.01)
-      : new THREE.Vector3(2.6, 8.4, 9.2);
+      ? new THREE.Vector3(0, 28, 0.01)
+      : new THREE.Vector3(3.4, 10.8, 11.8);
     this.flyTo(target.clone().add(offset), target, 0.95);
   }
 
@@ -501,8 +519,8 @@ export class World {
     const wp = this.bossPos.clone();
     const target = wp.clone().add(new THREE.Vector3(0, 0.6, 0));
     const offset = this.birdOn
-      ? new THREE.Vector3(0, 16, 0.01)
-      : new THREE.Vector3(1.6, 2.6, 3.2);
+      ? new THREE.Vector3(0, 20, 0.01)
+      : new THREE.Vector3(2.1, 3.4, 4.2);
     this.flyTo(target.clone().add(offset), target, 0.85);
   }
 
@@ -513,7 +531,7 @@ export class World {
 
   resetView(): void {
     const target = HOME_TARGET.clone();
-    const pos = this.birdOn ? new THREE.Vector3(0, 92, 0.01) : HOME_POS.clone();
+    const pos = this.birdOn ? BIRD_POS.clone() : HOME_POS.clone();
     this.flyTo(pos, target, 1.1);
   }
 
@@ -544,7 +562,7 @@ export class World {
     if (!boss) return;
     npcWorldPosition(boss, this.bossPos);
     const target = this.bossPos.clone().add(new THREE.Vector3(0, 0.7, 0));
-    const desired = target.clone().add(new THREE.Vector3(2.6, 3.4, 5.2));
+    const desired = target.clone().add(new THREE.Vector3(3.4, 4.6, 6.8));
     const k = snap ? 1 : Math.min(1, 0.09);
     this.camera.position.lerp(desired, k);
     this.controls.target.lerp(target, k);
@@ -641,6 +659,14 @@ export class World {
     const k = Math.min(1, dt * 5);
     lerpSky(this.skyNow, this.skyGoal, k);
     this.sunNow.lerp(this.sunGoal, k);
+
+    // 靜態幾何的陰影：太陽移到下一格才重算一次，不必每幀畫兩百萬個三角形
+    const sig = `${Math.round(this.sunNow.x / 3)},${Math.round(this.sunNow.y / 3)},${Math.round(this.sunNow.z / 3)}`;
+    if (sig !== this.shadowSig) {
+      this.shadowSig = sig;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
+
     this.applySky(this.skyNow);
 
     if (this.toggles.patrol) {
@@ -719,18 +745,22 @@ export class World {
     if (this.scene.fog) {
       const fog = this.scene.fog as THREE.Fog;
       fog.color.copy(s.fog).lerp(GRAY_BOTTOM, w.gray * 0.8);
-      fog.near = 110 * w.fogNear;
-      fog.far = 420 * w.fogFar;
+      fog.near = 120 * s.fogNear * w.fogNear;
+      fog.far = 460 * s.fogFar * w.fogFar;
     }
     this.sun.color.copy(s.sunColor);
     this.sun.intensity = s.sunIntensity * w.sun;
     this.hemi.color.copy(s.hemiSky);
     this.hemi.groundColor.copy(s.hemiGround);
     this.hemi.intensity = s.hemiIntensity * w.hemi;
+    this.fill.color.copy(s.fillColor);
+    this.fill.intensity = s.fillIntensity * w.hemi;
     this.ambient.color.copy(s.ambientColor);
     this.ambient.intensity = s.ambientIntensity * w.ambient;
     this.ocean.setColor(s.waterColor.clone().lerp(RAIN_WATER, w.gray * 0.55));
     this.sun.position.copy(this.sunNow);
+    // 天黑了，路燈就亮
+    setPropNight(s.night);
   }
 }
 
@@ -741,9 +771,9 @@ const WEATHER_FACTOR: Record<WeatherKey, { sun: number; hemi: number; ambient: n
   rain: { sun: 0.22, hemi: 1.06, ambient: 1.14, gray: 0.62, fogNear: 0.55, fogFar: 0.5 },
 };
 
-const GRAY_TOP = new THREE.Color('#9FB6C6');
-const GRAY_BOTTOM = new THREE.Color('#C8D4DC');
-const RAIN_WATER = new THREE.Color('#5E7E96');
+const GRAY_TOP = new THREE.Color('#B7C4CC');
+const GRAY_BOTTOM = new THREE.Color('#D8D2C8');
+const RAIN_WATER = new THREE.Color('#6E8796');
 
 function hasPeak(fruitId: string, month: number): boolean {
   return FRUIT_BY_ID[fruitId]?.peak.includes(month) ?? false;

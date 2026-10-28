@@ -12,7 +12,7 @@ import {
 } from './data/atlas';
 import { RESIDENT_BY_ID, TOTAL_RESIDENTS } from './data/residents';
 import type { TimeKey, ToggleKey, WeatherKey } from './data/types';
-import { formatClock, hourNote } from './scene/palette';
+import { formatClock, hourNote, nightFactor } from './scene/palette';
 import { World } from './scene/world';
 import { store, type AppState } from './state';
 import { initCard } from './ui/card';
@@ -168,6 +168,8 @@ store.on(['minutes'], (s) => {
   if (document.activeElement !== daySlider) daySlider.value = String(Math.round(s.minutes));
   clockEl.textContent = formatClock(s.minutes);
   dayNoteEl.textContent = hourNote(s.minutes);
+  // 入夜時整座介面跟著換成夜色（暗角、面板配色）
+  document.body.classList.toggle('is-night', nightFactor(s.minutes) > 0.5);
 });
 
 let prevToggles: Record<ToggleKey, boolean> = { ...store.state.toggles };

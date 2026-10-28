@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { isMarket } from '../data/markets';
+import { TOY } from './palette';
 
 /**
  * 植物／建築造型工廠。
@@ -52,12 +54,41 @@ const box = (w: number, h: number, d: number): THREE.BoxGeometry =>
   cached(`x:${w}:${h}:${d}`, () => new THREE.BoxGeometry(w, h, d));
 const torus = (r: number, t: number, arc: number): THREE.TorusGeometry =>
   cached(`t:${r}:${t}:${arc}`, () => new THREE.TorusGeometry(r, t, 4, 9, arc));
+/** 圓角盒：所有建築與木箱都用它，邊緣圓滑才有玩具積木的感覺 */
+const RBOX = new RoundedBoxGeometry(1, 1, 1, 2, 0.11);
+const rbox = (w: number, h: number, d: number): THREE.BufferGeometry =>
+  cached(`rb:${w}:${h}:${d}`, () => {
+    const g = RBOX.clone();
+    g.scale(w, h, d);
+    return g;
+  });
 
 // ---------- 材質與網格 ----------
 
+const _tone = new THREE.Color();
+const _leaf = new THREE.Color(TOY.leaf);
+const _clay = new THREE.Color(TOY.clay);
+
+/**
+ * 把顏色收進玩具模型的色域。
+ *
+ * 綠色系全部往抹茶綠收斂（真實的葉綠素太濃，塑膠玩具不會那麼綠），
+ * 其他顏色輕輕摻一點陶土，讓整座群島的色調一致。
+ */
+function toyTone(hex: string): string {
+  _tone.set(hex);
+  const { r, g, b } = _tone;
+  if (g - Math.max(r, b) > 0.05) {
+    _tone.lerp(_leaf, 0.42);
+  } else {
+    _tone.lerp(_clay, 0.05);
+  }
+  return `#${_tone.getHexString()}`;
+}
+
 function mk(color: string, rough = 0.85, emissive = 0): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(color),
+    color: new THREE.Color(toyTone(color)),
     roughness: rough,
     metalness: 0.03,
     flatShading: true,
@@ -424,57 +455,60 @@ function papayaPlant(accent: string): PlantKit {
 
 // ---------- 主島：北農的建築與設施（動森公共設施風） ----------
 
-const NAVY = '#2F6690';
-const CREAM = '#F4EFE4';
-const DECK = '#C8A97A';
+const NAVY = TOY.slateDeep;
+const CREAM = TOY.cream;
+const DECK = TOY.wood;
+const ROOF = TOY.coral;
+const TRIM = TOY.woodDeep;
+const GLASS = '#A8D8E8';
 
 /** 行政大樓 */
 function cityHall(glow: THREE.MeshStandardMaterial[]): PlantKit {
   const body = new THREE.Group();
   const fruits: THREE.Mesh[] = [];
 
-  const baseMat = mk('#DCD6C8', 0.95);
-  const base = mesh(box(1.2, 0.13, 1.05), baseMat);
-  base.position.y = 0.065;
+  const baseMat = mk(TOY.stone, 0.95);
+  const base = mesh(rbox(1.2, 0.16, 1.05), baseMat);
+  base.position.y = 0.08;
   body.add(base);
 
   const wallMat = mk(CREAM, 0.9);
   glow.push(wallMat);
-  const wall = mesh(box(1.0, 0.86, 0.86), wallMat);
-  wall.position.y = 0.56;
+  const wall = mesh(rbox(1.0, 0.86, 0.86), wallMat);
+  wall.position.y = 0.59;
   body.add(wall);
 
-  const roofMat = mk(NAVY, 0.75);
+  const roofMat = mk(ROOF, 0.78);
   glow.push(roofMat);
-  const roof = mesh(cone(0.8, 0.5, 4), roofMat);
-  roof.position.y = 1.24;
+  const roof = mesh(cone(0.8, 0.52, 4), roofMat);
+  roof.position.y = 1.27;
   roof.rotation.y = Math.PI / 4;
   body.add(roof);
 
   // 窗
-  const glassMat = mk('#9FD8EE', 0.25, 0.35);
+  const glassMat = mk(GLASS, 0.25, 0.35);
   glow.push(glassMat);
   for (let i = 0; i < 4; i++) {
     const w = mesh(box(0.17, 0.21, 0.04), glassMat);
-    w.position.set(-0.3 + (i % 2) * 0.6, 0.68 - Math.floor(i / 2) * 0.34, 0.44);
+    w.position.set(-0.3 + (i % 2) * 0.6, 0.71 - Math.floor(i / 2) * 0.34, 0.44);
     body.add(w);
   }
   // 大門
-  const door = mesh(box(0.24, 0.36, 0.05), roofMat);
-  door.position.set(0, 0.31, 0.44);
+  const door = mesh(rbox(0.26, 0.38, 0.06), mk(TRIM, 0.85));
+  door.position.set(0, 0.33, 0.44);
   body.add(door);
 
   // 招牌
-  const sign = mesh(box(0.56, 0.15, 0.04), roofMat);
-  sign.position.set(0, 1.0, 0.46);
+  const sign = mesh(rbox(0.58, 0.17, 0.05), roofMat);
+  sign.position.set(0, 1.02, 0.46);
   body.add(sign);
 
   // 旗竿
   const pole = mesh(cyl(0.016, 0.02, 0.95, 5), baseMat);
-  pole.position.set(0.56, 0.6, -0.4);
+  pole.position.set(0.56, 0.62, -0.4);
   body.add(pole);
-  const flag = mesh(box(0.3, 0.18, 0.02), roofMat);
-  flag.position.set(0.71, 0.98, -0.4);
+  const flag = mesh(rbox(0.3, 0.18, 0.03), roofMat);
+  flag.position.set(0.71, 1.0, -0.4);
   body.add(flag);
 
   return { body, fruits, glow, labelY: 1.95, pickY: 0.7 };
@@ -485,7 +519,7 @@ function auctionHall(glow: THREE.MeshStandardMaterial[]): PlantKit {
   const body = new THREE.Group();
   const fruits: THREE.Mesh[] = [];
 
-  const postMat = mk('#9AA3AC', 0.9);
+  const postMat = mk(TOY.slate, 0.9);
   for (const [x, z] of [
     [-0.55, -0.42],
     [0.55, -0.42],
@@ -497,22 +531,28 @@ function auctionHall(glow: THREE.MeshStandardMaterial[]): PlantKit {
     body.add(p);
   }
 
-  const roofMat = mk('#7E95A8', 0.7);
+  // 鐵皮棚：珊瑚色的屋頂，是市場最好認的顏色
+  const roofMat = mk(ROOF, 0.72);
   glow.push(roofMat);
-  const roof = mesh(box(1.4, 0.08, 1.05), roofMat);
-  roof.position.set(0, 0.86, 0);
+  const roof = mesh(rbox(1.42, 0.1, 1.07), roofMat);
+  roof.position.set(0, 0.87, 0);
   roof.rotation.x = 0.07;
   body.add(roof);
+  // 屋脊
+  const ridge = mesh(rbox(1.44, 0.06, 0.1), mk(TOY.coralDeep, 0.8));
+  ridge.position.set(0, 0.94, 0);
+  ridge.rotation.x = 0.07;
+  body.add(ridge);
 
   // 拍賣台
   const deckMat = mk(DECK, 0.85);
   glow.push(deckMat);
-  const deck = mesh(box(0.72, 0.12, 0.3), deckMat);
-  deck.position.set(0, 0.34, -0.1);
+  const deck = mesh(rbox(0.72, 0.14, 0.32), deckMat);
+  deck.position.set(0, 0.35, -0.1);
   body.add(deck);
-  const legMat = mk('#8C6E4A', 0.9);
+  const legMat = mk(TRIM, 0.9);
   for (const x of [-0.3, 0.3]) {
-    const leg = mesh(box(0.08, 0.28, 0.22), legMat);
+    const leg = mesh(rbox(0.09, 0.28, 0.22), legMat);
     leg.position.set(x, 0.14, -0.1);
     body.add(leg);
   }
@@ -527,18 +567,18 @@ function auctionHall(glow: THREE.MeshStandardMaterial[]): PlantKit {
 
   // 待拍的貨（木箱與紙箱）
   const crateMat = mk(DECK, 0.9);
-  const cartonMat = mk('#D8B98C', 0.92);
+  const cartonMat = mk(TOY.creamDeep, 0.92);
   glow.push(crateMat);
-  const crate = mesh(box(0.34, 0.26, 0.3), crateMat);
-  crate.position.set(-0.28, 0.13, 0.2);
+  const crate = mesh(rbox(0.34, 0.26, 0.3), crateMat);
+  crate.position.set(-0.28, 0.14, 0.2);
   body.add(crate);
   fruits.push(crate);
-  const carton = mesh(box(0.3, 0.22, 0.26), cartonMat);
-  carton.position.set(0.02, 0.11, 0.24);
+  const carton = mesh(rbox(0.3, 0.22, 0.26), cartonMat);
+  carton.position.set(0.02, 0.12, 0.24);
   body.add(carton);
   fruits.push(carton);
-  const carton2 = mesh(box(0.26, 0.2, 0.24), cartonMat);
-  carton2.position.set(-0.26, 0.36, 0.2);
+  const carton2 = mesh(rbox(0.26, 0.2, 0.24), cartonMat);
+  carton2.position.set(-0.26, 0.37, 0.2);
   body.add(carton2);
   fruits.push(carton2);
 
@@ -550,49 +590,49 @@ function auctionMachine(glow: THREE.MeshStandardMaterial[]): PlantKit {
   const body = new THREE.Group();
   const fruits: THREE.Mesh[] = [];
 
-  const deskMat = mk('#B08B5E', 0.85);
+  const deskMat = mk(TOY.wood, 0.85);
   glow.push(deskMat);
-  const desk = mesh(box(0.8, 0.1, 0.5), deskMat);
+  const desk = mesh(rbox(0.8, 0.11, 0.5), deskMat);
   desk.position.y = 0.42;
   body.add(desk);
-  const legMat = mk('#8A6A44', 0.9);
+  const legMat = mk(TOY.woodDeep, 0.9);
   for (const [x, z] of [
     [-0.34, -0.2],
     [0.34, -0.2],
     [-0.34, 0.2],
     [0.34, 0.2],
   ] as const) {
-    const leg = mesh(box(0.06, 0.38, 0.06), legMat);
+    const leg = mesh(rbox(0.07, 0.38, 0.07), legMat);
     leg.position.set(x, 0.19, z);
     body.add(leg);
   }
 
   // 螢幕
-  const caseMat = mk('#4C525C', 0.6);
-  const screen = mesh(box(0.44, 0.32, 0.06), caseMat);
+  const caseMat = mk(TOY.slateDeep, 0.6);
+  const screen = mesh(rbox(0.44, 0.32, 0.07), caseMat);
   screen.position.set(-0.12, 0.64, -0.06);
   body.add(screen);
-  const panelMat = mk('#63D2F2', 0.2, 0.9);
+  const panelMat = mk(GLASS, 0.2, 0.9);
   glow.push(panelMat);
   const panel = mesh(box(0.37, 0.25, 0.02), panelMat);
   panel.position.set(-0.12, 0.64, -0.02);
   body.add(panel);
 
   // 鍵盤與讀卡機
-  const kb = mesh(box(0.38, 0.03, 0.15), caseMat);
+  const kb = mesh(rbox(0.38, 0.04, 0.15), caseMat);
   kb.position.set(-0.12, 0.49, 0.12);
   body.add(kb);
-  const reader = mesh(box(0.13, 0.06, 0.12), mk('#E8871A', 0.6, 0.3));
+  const reader = mesh(rbox(0.13, 0.07, 0.12), mk(TOY.honey, 0.6, 0.3));
   reader.position.set(0.2, 0.5, 0.1);
   body.add(reader);
 
   // 椅子
   const chairMat = mk(NAVY, 0.8);
   glow.push(chairMat);
-  const seat = mesh(box(0.26, 0.07, 0.26), chairMat);
+  const seat = mesh(rbox(0.26, 0.08, 0.26), chairMat);
   seat.position.set(0, 0.3, 0.42);
   body.add(seat);
-  const backRest = mesh(box(0.26, 0.3, 0.06), chairMat);
+  const backRest = mesh(rbox(0.26, 0.3, 0.07), chairMat);
   backRest.position.set(0, 0.47, 0.54);
   body.add(backRest);
   const stem = mesh(cyl(0.03, 0.03, 0.26, 5), caseMat);
@@ -607,41 +647,41 @@ function clockTower(glow: THREE.MeshStandardMaterial[]): PlantKit {
   const body = new THREE.Group();
   const fruits: THREE.Mesh[] = [];
 
-  const baseMat = mk('#DCD6C8', 0.95);
-  const base = mesh(box(0.78, 0.14, 0.78), baseMat);
-  base.position.y = 0.07;
+  const baseMat = mk(TOY.stone, 0.95);
+  const base = mesh(rbox(0.78, 0.16, 0.78), baseMat);
+  base.position.y = 0.08;
   body.add(base);
 
   const wallMat = mk(CREAM, 0.9);
   glow.push(wallMat);
   const shaft = mesh(cyl(0.21, 0.29, 1.15, 6), wallMat);
-  shaft.position.y = 0.72;
+  shaft.position.y = 0.74;
   body.add(shaft);
 
   // 鐘面
-  const faceMat = mk('#FFFDF6', 0.4, 0.3);
+  const faceMat = mk(TOY.cream, 0.4, 0.3);
   glow.push(faceMat);
   const face = mesh(cyl(0.27, 0.27, 0.07, 12), faceMat);
   face.rotation.x = Math.PI / 2;
-  face.position.set(0, 1.28, 0.24);
+  face.position.set(0, 1.3, 0.24);
   body.add(face);
-  const handMat = mk('#30414C', 0.5);
+  const handMat = mk(TOY.ink, 0.5);
   const hourHand = mesh(box(0.03, 0.15, 0.02), handMat);
-  hourHand.position.set(0, 1.34, 0.29);
+  hourHand.position.set(0, 1.36, 0.29);
   body.add(hourHand);
   const minHand = mesh(box(0.025, 0.21, 0.02), handMat);
-  minHand.position.set(0.07, 1.28, 0.29);
+  minHand.position.set(0.07, 1.3, 0.29);
   minHand.rotation.z = 0.9;
   body.add(minHand);
 
   // 尖頂
-  const roofMat = mk(NAVY, 0.75);
+  const roofMat = mk(ROOF, 0.78);
   glow.push(roofMat);
   const roof = mesh(cone(0.36, 0.55, 6), roofMat);
-  roof.position.y = 1.72;
+  roof.position.y = 1.74;
   body.add(roof);
-  const finial = mesh(sph(0.06, 6, 5), mk('#E0B24E', 0.4, 0.3));
-  finial.position.y = 2.02;
+  const finial = mesh(sph(0.06, 6, 5), mk(TOY.honey, 0.4, 0.3));
+  finial.position.y = 2.04;
   body.add(finial);
 
   return { body, fruits, glow, labelY: 2.5, pickY: 0.85 };
@@ -655,20 +695,20 @@ function truckDock(glow: THREE.MeshStandardMaterial[]): PlantKit {
   // 貨車
   const cargoMat = mk(CREAM, 0.85);
   glow.push(cargoMat);
-  const cargo = mesh(box(0.56, 0.4, 0.95), cargoMat);
-  cargo.position.set(0.05, 0.42, -0.1);
+  const cargo = mesh(rbox(0.56, 0.42, 0.95), cargoMat);
+  cargo.position.set(0.05, 0.44, -0.1);
   body.add(cargo);
 
   const cabMat = mk(NAVY, 0.7);
   glow.push(cabMat);
-  const cab = mesh(box(0.52, 0.34, 0.36), cabMat);
-  cab.position.set(0.05, 0.38, 0.52);
+  const cab = mesh(rbox(0.52, 0.36, 0.36), cabMat);
+  cab.position.set(0.05, 0.4, 0.52);
   body.add(cab);
-  const glass = mesh(box(0.44, 0.16, 0.03), mk('#9FD8EE', 0.25, 0.3));
-  glass.position.set(0.05, 0.44, 0.7);
+  const glass = mesh(box(0.44, 0.16, 0.03), mk(GLASS, 0.25, 0.3));
+  glass.position.set(0.05, 0.46, 0.7);
   body.add(glass);
 
-  const tyreMat = mk('#3A3A40', 0.85);
+  const tyreMat = mk(TOY.ink, 0.85);
   for (const [x, z] of [
     [-0.26, 0.36],
     [0.3, 0.36],
@@ -682,20 +722,20 @@ function truckDock(glow: THREE.MeshStandardMaterial[]): PlantKit {
   }
 
   // 棧板與貨箱
-  const palletMat = mk('#B58A57', 0.92);
-  const pallet = mesh(box(0.6, 0.07, 0.5), palletMat);
-  pallet.position.set(-0.05, 0.035, 0.68);
+  const palletMat = mk(TOY.wood, 0.92);
+  const pallet = mesh(rbox(0.6, 0.08, 0.5), palletMat);
+  pallet.position.set(-0.05, 0.04, 0.68);
   body.add(pallet);
 
-  const cartonMat = mk('#DBBE92', 0.94);
+  const cartonMat = mk(TOY.creamDeep, 0.94);
   glow.push(cartonMat);
   const boxPositions: [number, number, number][] = [
-    [-0.2, 0.21, 0.62],
-    [0.1, 0.21, 0.62],
-    [-0.05, 0.48, 0.66],
+    [-0.2, 0.22, 0.62],
+    [0.1, 0.22, 0.62],
+    [-0.05, 0.5, 0.66],
   ];
   for (const [x, y, z] of boxPositions) {
-    const c = mesh(box(0.26, 0.28, 0.26), cartonMat);
+    const c = mesh(rbox(0.26, 0.28, 0.26), cartonMat);
     c.position.set(x, y, z);
     body.add(c);
     fruits.push(c);
@@ -709,27 +749,27 @@ function dataBoard(glow: THREE.MeshStandardMaterial[]): PlantKit {
   const body = new THREE.Group();
   const fruits: THREE.Mesh[] = [];
 
-  const postMat = mk('#9AA3AC', 0.9);
+  const postMat = mk(TOY.slate, 0.9);
   for (const x of [-0.5, 0.5]) {
     const p = mesh(cyl(0.045, 0.05, 1.15, 6), postMat);
     p.position.set(x, 0.58, 0);
     body.add(p);
   }
 
-  const frameMat = mk('#3C4A57', 0.7);
+  const frameMat = mk(TOY.slateDeep, 0.7);
   glow.push(frameMat);
-  const frame = mesh(box(1.2, 0.66, 0.08), frameMat);
+  const frame = mesh(rbox(1.2, 0.68, 0.09), frameMat);
   frame.position.y = 1.18;
   body.add(frame);
 
-  const panelMat = mk('#7FE3F0', 0.2, 0.85);
+  const panelMat = mk(GLASS, 0.2, 0.85);
   glow.push(panelMat);
   const panel = mesh(box(1.06, 0.52, 0.02), panelMat);
   panel.position.set(0, 1.18, 0.05);
   body.add(panel);
 
   // 看板上的行情報導橫條
-  const barMat = mk('#E8871A', 0.5, 0.4);
+  const barMat = mk(TOY.honey, 0.5, 0.4);
   for (let i = 0; i < 4; i++) {
     const bar = mesh(box(0.5 - (i % 2) * 0.18, 0.055, 0.02), i % 2 === 0 ? barMat : panelMat);
     bar.position.set(-0.16 + (i % 2) * 0.1, 1.36 - i * 0.12, 0.07);
@@ -737,14 +777,14 @@ function dataBoard(glow: THREE.MeshStandardMaterial[]): PlantKit {
   }
 
   // 紙箱堆（傳票與單據）
-  const cartonMat = mk('#DCBE93', 0.94);
+  const cartonMat = mk(TOY.creamDeep, 0.94);
   glow.push(cartonMat);
-  const c1 = mesh(box(0.32, 0.26, 0.28), cartonMat);
-  c1.position.set(-0.28, 0.13, 0.22);
+  const c1 = mesh(rbox(0.32, 0.26, 0.28), cartonMat);
+  c1.position.set(-0.28, 0.14, 0.22);
   body.add(c1);
   fruits.push(c1);
-  const c2 = mesh(box(0.26, 0.2, 0.24), cartonMat);
-  c2.position.set(0.22, 0.1, 0.2);
+  const c2 = mesh(rbox(0.26, 0.2, 0.24), cartonMat);
+  c2.position.set(0.22, 0.11, 0.2);
   body.add(c2);
   fruits.push(c2);
 

@@ -38,7 +38,7 @@ body {
   overflow: hidden;
   font-family: var(--font);
   color: var(--ink);
-  background: #dff2fb;
+  background: #f4eee3;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -60,6 +60,29 @@ body {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+/* 玩具模型的照片感：四角壓暗、中央留亮，模擬移軸鏡頭拍微縮場景 */
+.tilt {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 92% at 50% 46%,
+      rgba(255, 248, 237, 0) 42%,
+      rgba(196, 150, 96, 0.1) 74%,
+      rgba(120, 84, 48, 0.24) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* 夜間時暗角改成偏藍，整座群島才會跟著入夜 */
+body.is-night .tilt {
+  background:
+    radial-gradient(120% 92% at 50% 46%,
+      rgba(255, 248, 237, 0) 40%,
+      rgba(48, 62, 104, 0.16) 74%,
+      rgba(18, 26, 52, 0.42) 100%);
 }
 
 button {
