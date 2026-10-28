@@ -13,6 +13,8 @@ export interface NpcView {
   shadow: THREE.Mesh;
   material: THREE.MeshStandardMaterial;
   label: Label;
+  /** BOSS 頭上的金色星星（一般居民沒有） */
+  star?: THREE.Mesh;
   data: { islandId: string; residentId: string };
   phase: number;
   baseScale: number;
@@ -46,6 +48,45 @@ const SHADOW_MAT = new THREE.MeshBasicMaterial({
   opacity: 0.2,
   depthWrite: false,
 });
+
+/** BOSS 星星：五角星擠出成形，頭上轉啊轉的那種 */
+const BOSS_STAR_GEO = (() => {
+  const shape = new THREE.Shape();
+  const spikes = 5;
+  const outer = 0.2;
+  const inner = 0.086;
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.07,
+    bevelEnabled: true,
+    bevelThickness: 0.016,
+    bevelSize: 0.016,
+    bevelSegments: 1,
+    curveSegments: 1,
+  });
+  geo.center();
+  return geo;
+})();
+
+const BOSS_STAR_MAT = new THREE.MeshStandardMaterial({
+  color: new THREE.Color('#FFC94A'),
+  emissive: new THREE.Color('#FF9C1E'),
+  emissiveIntensity: 0.42,
+  roughness: 0.34,
+  metalness: 0.22,
+});
+
+/** 星星停在哪：頭頂再上面一點，名牌再更上面 */
+const BOSS_STAR_Y = 1.3;
+const BOSS_LABEL_Y = 1.68;
 
 function darken(hex: string, amount: number): string {
   const c = new THREE.Color(hex);
@@ -142,9 +183,18 @@ export function createNpc(resident: Resident, index: number): NpcView {
   root.add(anim, shadow);
 
   const label = residentLabel(resident.name, resident.role, resident.color, resident.boss);
-  label.obj.position.set(0, 1.32, 0);
+  label.obj.position.set(0, resident.boss ? BOSS_LABEL_Y : 1.32, 0);
   setHidden(label, true);
   root.add(label.obj);
+
+  // 吳總是大 BOSS：頭上頂一顆會轉的金星，遠遠就認得出來
+  let star: THREE.Mesh | undefined;
+  if (resident.boss) {
+    star = new THREE.Mesh(BOSS_STAR_GEO, BOSS_STAR_MAT);
+    star.position.set(0, BOSS_STAR_Y, 0);
+    star.renderOrder = 2;
+    root.add(star);
+  }
 
   const view: NpcView = {
     root,
@@ -153,6 +203,7 @@ export function createNpc(resident: Resident, index: number): NpcView {
     shadow,
     material,
     label,
+    star,
     data: { islandId: resident.islandId, residentId: resident.id },
     phase: index * 1.31,
     baseScale: resident.boss ? 1.16 : 1,
@@ -183,6 +234,13 @@ export function updateNpc(view: NpcView, t: number, dt: number, visible: boolean
   const wantGlow = view.selected ? 0.3 : view.hovered ? 0.18 : 0.04;
   view.material.emissiveIntensity += (wantGlow - view.material.emissiveIntensity) * Math.min(1, dt * 10);
   view.root.scale.multiplyScalar(1 + (view.hovered || view.selected ? 0.14 : 0));
+
+  if (view.star) {
+    // 星星：慢慢自轉 + 上下浮，像在提醒「這位是總經理」
+    view.star.rotation.y = t * 1.35 + view.phase * 0.5;
+    view.star.position.y = BOSS_STAR_Y + Math.sin(t * 1.8 + view.phase) * 0.055;
+    BOSS_STAR_MAT.emissiveIntensity = 0.36 + (Math.sin(t * 2.4) + 1) * 0.14;
+  }
 }
 
 export function setNpcLabelVisible(view: NpcView, visible: boolean): void {
