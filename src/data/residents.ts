@@ -66,7 +66,7 @@ function buildVarietyResidents(): Resident[] {
         lead: `我是${fruit.name}島的居民。${v.note}`,
         points: [
           `所屬品種｜${v.name}`,
-          `家鄉｜${fruit.name}（${fruit.en}）`,
+          `果種｜${fruit.name}（${fruit.en}）`,
           `盛產期｜${fruit.peak.map((m) => monthLabel(m)).join('、')}`,
           `主要產地｜${fruit.regions.map((r) => r.name).join('、')}`,
           `一句話特色｜${v.note}`,
