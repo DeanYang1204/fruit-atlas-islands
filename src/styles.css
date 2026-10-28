@@ -687,8 +687,9 @@ button {
   flex-direction: row;
   align-items: center;
   gap: 2px;
+  row-gap: 4px;
   padding: 5px 8px 5px 6px;
-  border-radius: 999px;
+  border-radius: 26px;
   pointer-events: none;
 }
 
@@ -715,6 +716,11 @@ button {
   flex: 1 1 auto;
   min-width: 0;
   padding: 2px 4px 2px 6px;
+  /* 塞不下時換行攤開，所有島嶼按鈕都看得到，不再藏進捲動 */
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 2px;
+  overflow: visible;
 }
 
 .bottom-stack .hud {
@@ -1753,6 +1759,10 @@ button {
 
   .bottom-stack .dock {
     padding: 6px 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 2px;
+    overflow: visible;
   }
 
   .bottom-stack .hud .toggles {
