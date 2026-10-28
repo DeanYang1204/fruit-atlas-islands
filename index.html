@@ -33,6 +33,19 @@
   </div>
 
   <nav class="toolbar" aria-label="地圖操作">
+    <div class="tb-segs">
+      <div class="seg" role="group" aria-label="時段">
+        <button data-time="dawn" title="清晨" aria-label="清晨 06:00"><svg viewBox="0 0 24 24"><path d="M4 17h16M7 17a5 5 0 0110 0M12 6v3M5.5 9.5l2 2M18.5 9.5l-2 2"/></svg></button>
+        <button data-time="day" title="白天" aria-label="白天 12:00"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg></button>
+        <button data-time="dusk" title="黃昏" aria-label="黃昏 18:00"><svg viewBox="0 0 24 24"><path d="M3 18h18M6 18a6 6 0 0112 0M4 14h2M18 14h2M12 7v2"/><path d="M9 21h6"/></svg></button>
+        <button data-time="night" title="夜晚" aria-label="夜晚 21:00"><svg viewBox="0 0 24 24"><path d="M19 15A8 8 0 019 5a7 7 0 1010 10z"/></svg></button>
+      </div>
+      <div class="seg" role="group" aria-label="天氣">
+        <button data-weather="clear" class="is-on" title="晴" aria-label="晴天"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg><span>晴</span></button>
+        <button data-weather="cloudy" title="陰" aria-label="陰天"><svg viewBox="0 0 24 24"><path d="M6 15h11a3.5 3.5 0 000-7 5 5 0 00-9.6 1.4A3 3 0 006 15z"/></svg><span>陰</span></button>
+        <button data-weather="rain" title="雨" aria-label="下雨"><svg viewBox="0 0 24 24"><path d="M6 13h11a3.5 3.5 0 000-7 5 5 0 00-9.6 1.4A3 3 0 006 13z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></svg><span>雨</span></button>
+      </div>
+    </div>
     <button id="home" title="回到全景">
       <svg class="tb-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg> 全景
     </button>
@@ -68,17 +81,6 @@
   <div class="bottom-stack" id="bottom-stack">
     <div class="hud" id="hud" aria-label="島嶼狀態與顯示選項">
       <div class="toggles" role="toolbar" aria-label="顯示選項">
-      <div class="seg" role="group" aria-label="時段">
-        <button data-time="dawn" title="清晨" aria-label="清晨 06:00"><svg viewBox="0 0 24 24"><path d="M4 17h16M7 17a5 5 0 0110 0M12 6v3M5.5 9.5l2 2M18.5 9.5l-2 2"/></svg></button>
-        <button data-time="day" title="白天" aria-label="白天 12:00"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg></button>
-        <button data-time="dusk" title="黃昏" aria-label="黃昏 18:00"><svg viewBox="0 0 24 24"><path d="M3 18h18M6 18a6 6 0 0112 0M4 14h2M18 14h2M12 7v2"/><path d="M9 21h6"/></svg></button>
-        <button data-time="night" title="夜晚" aria-label="夜晚 21:00"><svg viewBox="0 0 24 24"><path d="M19 15A8 8 0 019 5a7 7 0 1010 10z"/></svg></button>
-      </div>
-      <div class="seg" role="group" aria-label="天氣">
-        <button data-weather="clear" class="is-on" title="晴" aria-label="晴天"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg><span>晴</span></button>
-        <button data-weather="cloudy" title="陰" aria-label="陰天"><svg viewBox="0 0 24 24"><path d="M6 15h11a3.5 3.5 0 000-7 5 5 0 00-9.6 1.4A3 3 0 006 15z"/></svg><span>陰</span></button>
-        <button data-weather="rain" title="雨" aria-label="下雨"><svg viewBox="0 0 24 24"><path d="M6 13h11a3.5 3.5 0 000-7 5 5 0 00-9.6 1.4A3 3 0 006 13z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></svg><span>雨</span></button>
-      </div>
       <div class="seg seg2" role="group" aria-label="顯示圖層">
         <button class="tg" data-toggle="names" title="名牌" aria-pressed="true"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4"/></svg><span>名牌</span></button>
         <button class="tg" data-toggle="fruits" title="果實" aria-pressed="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="11" r="6"/><path d="M9 20l3-3 3 3"/></svg><span>果實</span></button>

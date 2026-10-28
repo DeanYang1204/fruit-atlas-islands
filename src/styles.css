@@ -203,9 +203,41 @@ button {
   right: calc(var(--card-w) + 28px);
   z-index: 12;
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 6px;
   border-radius: 999px;
+}
+
+/* 上方工具列左段的時段＋天氣：與其他工具鈕融合成一顆藥丸 */
+.toolbar .tb-segs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 10px 0 2px;
+  border-right: 1px solid var(--line);
+}
+
+.toolbar .tb-segs .seg + .seg {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.toolbar .tb-segs .seg button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px;
+  gap: 4px;
+}
+
+.toolbar .tb-segs .seg button span {
+  font-size: 12px;
+}
+
+.toolbar .tb-segs .seg button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .toolbar button {
@@ -1727,8 +1759,7 @@ button {
     padding: 7px 9px;
     margin-left: 0;
     border-left: 0;
-    border-radius: 999px;
-  }
+    border-radius: 999px;  }
 
   .controls {
     left: 320px;
@@ -1737,6 +1768,11 @@ button {
 
   .mascot {
     right: 368px;
+  }
+
+  /* 中窄螢幕：時段＋天氣在上方工具列收成純圖示，避免壓到側欄 */
+  .toolbar .tb-segs .seg button span {
+    display: none;
   }
 }
 
@@ -1756,6 +1792,24 @@ button {
   .toolbar {
     top: 12px;
     right: 12px;
+    left: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 6px;
+    border-radius: var(--r);
+  }
+
+  .toolbar .tb-segs {
+    margin-right: auto;
+  }
+
+  .toolbar .tb-segs .seg button span {
+    display: none;
+  }
+
+  .toolbar .tb-segs .seg + .seg {
+    margin-left: 0;
+    padding-left: 6px;
   }
 
   .bottom-stack {
