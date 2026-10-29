@@ -679,8 +679,11 @@ button {
    窄螢幕（≤1180px）退回上下兩顆堆疊，兩者永遠不重疊 */
 .bottom-stack {
   position: absolute;
-  left: 352px;
-  right: 416px;
+  /* 自適應：寬度跟著內容走並在側欄與詳情卡之間置中，塞不下才換行 */
+  left: calc(352px + (100% - 768px) / 2);
+  transform: translateX(-50%);
+  width: fit-content;
+  max-width: calc(100% - 768px - 24px);
   bottom: 166px;
   z-index: 12;
   display: flex;
@@ -1736,19 +1739,14 @@ button {
   display: none;
 }
 
-@media (max-width: 1180px) {
-  :root {
-    --sidebar-w: 288px;
-    --card-w: 336px;
-  }
-
-  .bottom-stack,
-  .legend {
-    left: 320px;
-  }
-
-  /* 窄螢幕退回上下兩顆堆疊（融合列塞不下） */
+/* 中窄螢幕（≤1500px）：融合列塞不下，退回上下兩顆堆疊（快速列 + 顯示選項） */
+@media (max-width: 1500px) {
   .bottom-stack {
+    left: 320px;
+    right: 368px;
+    transform: none;
+    width: auto;
+    max-width: none;
     flex-direction: column-reverse;
     align-items: stretch;
     gap: 10px;
@@ -1766,13 +1764,43 @@ button {
     justify-content: center;
     row-gap: 2px;
     overflow: visible;
+    /* 堆疊模式還原快速列自己的玻璃底 */
+    background: var(--glass);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px) saturate(1.1);
+    -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  }
+
+  .bottom-stack .hud .toggles .seg2 {
+    justify-content: center;
   }
 
   .bottom-stack .hud .toggles {
+    width: 100%;
     padding: 7px 9px;
     margin-left: 0;
     border-left: 0;
-    border-radius: 999px;  }
+    border-radius: 999px;
+    justify-content: center;
+    /* 堆疊模式還原顯示選項自己的玻璃底 */
+    background: var(--glass);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px) saturate(1.1);
+    -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  }
+}
+
+@media (max-width: 1180px) {
+  :root {
+    --sidebar-w: 288px;
+    --card-w: 336px;
+  }
+
+  .legend {
+    left: 320px;
+  }
 
   .controls {
     left: 320px;
@@ -1829,6 +1857,9 @@ button {
     left: 12px;
     right: 12px;
     bottom: 84px;
+    transform: none;
+    width: auto;
+    max-width: none;
   }
 
   .hud .toggles {
